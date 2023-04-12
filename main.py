@@ -24,6 +24,7 @@ import torch
 # import wandb
 
 from loader import get_loaders
+from model import get_models
 from utils import (load_config, system_check)
 
 
@@ -31,6 +32,7 @@ def main():
     num_cpus, device = system_check()
     config = load_config()
     train_loader, val_loader, test_loader = get_loaders(config, debug=True)
+    # models = get_models(config, test_loader, device, debug=True)
 
 
 if __name__ == "__main__":

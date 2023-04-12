@@ -2,6 +2,7 @@ CONFIG = {
     "data_dir": None,
     "extension": "jpg",
     "regression_key": "value",
+    "starting_channels": 1,
 
     "wandb": True,
     "wandb_print": ["batch_size", "cnn_width", "lin_depth", "lin_width"],
