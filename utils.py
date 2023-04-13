@@ -1,5 +1,6 @@
 import argparse
 import copy
+import json
 import multiprocessing
 from pathlib import Path
 from psutil import virtual_memory
@@ -11,6 +12,11 @@ from config import CONFIG
 
 
 def connect_wandb(config):
+
+    keyfile = Path(config["keyfile"])
+    assert keyfile.is_file(), \
+           f"Need to populate {keyfile} with json containing wandb key"
+    wandb.login(key=json.load(keyfile.open("r"))["key"])
 
     name = "-".join([
         f"{key}:{config[key]}" if key in config else key
@@ -42,23 +48,31 @@ def load_config():
                         help="Path to dir with all images and labels")
     parser.add_argument("-b", "--batch-size", type=int, default=None)
     parser.add_argument("-e", "--epochs", type=int, default=None)
+    parser.add_argument("-l", "--lr", type=float, default=None)
     parser.add_argument("-w", "--wd", type=float, default=None)
     parser.add_argument("-d", "--cnn-depth", type=int, default=None)
     parser.add_argument("-k", "--cnn-kernel", type=int, default=None)
     parser.add_argument("-t", "--cnn-width", type=int, default=None)
     parser.add_argument("-o", "--cnn-outdim", type=int, default=None)
     parser.add_argument("-s", "--cnn-downsample", type=int, default=None)
+    parser.add_argument("-p", "--pool", default=None)
+    parser.add_argument("-D", "--lin-depth", type=int, default=None)
+    parser.add_argument("-W", "--lin-width", type=int, default=None)
     args = parser.parse_args()
 
     for key in ("data_dir",
                 "epochs",
                 "batch_size",
+                "lr",
                 "wd",
                 "cnn_depth",
                 "cnn_kernel",
                 "cnn_width",
                 "cnn_outdim",
-                "cnn_downsample"):
+                "cnn_downsample",
+                "pool",
+                "lin_depth",
+                "lin_width"):
         value = getattr(args, key)
         if value is not None:
             config[key] = value

@@ -15,6 +15,7 @@ class Network(nn.Module):
                  cnn_width,
                  cnn_outdim,
                  cnn_downsample,
+                 pool,
                  lin_depth,
                  lin_width):
         super(Network, self).__init__()
@@ -36,21 +37,22 @@ class Network(nn.Module):
                 downsampled *= 2
             else:
                 stride = 1
-            layers.append(nn.Conv1d(in_channels,
+            layers.append(nn.Conv2d(in_channels,
                                     out_channels,
                                     kernel_size=cnn_kernel,
                                     stride=stride))
             if i < cnn_depth - 1:
-                layers.append(nn.BatchNorm1d(out_channels))
+                layers.append(nn.BatchNorm2d(out_channels))
                 layers.append(nn.ReLU())
         self.embedding = nn.Sequential(*layers)
 
         # Pool all features into one across the image
-        self.pool = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),
-            # self.pool = nn.AdaptiveMaxPool2d((1, 1)),
-            torch.squeeze((2, 3)),
-        )
+        if pool == "avg":
+            self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        elif pool == "max":
+            self.pool = nn.AdaptiveMaxPool2d((1, 1))
+        else:
+            raise NotImplementedError(f"Unknown pool {pool}")
 
         layers = []
         for i in range(lin_depth):
@@ -62,7 +64,7 @@ class Network(nn.Module):
                 out_features = 1
             layers.append(nn.Linear(in_features, out_features))
             if i == lin_depth - 1:
-                layers.append(nn.Sigmoid())
+                pass
             else:
                 layers.append(nn.BatchNorm1d(out_features))
                 layers.append(nn.ReLU())
@@ -71,6 +73,7 @@ class Network(nn.Module):
     def forward(self, x):
         x = self.embedding(x)
         x = self.pool(x)
+        x = torch.squeeze(x)
         x = self.classification(x)
         return x
 
@@ -83,6 +86,7 @@ def network_kwargs(config):
         "cnn_width": config["cnn_width"],
         "cnn_outdim": config["cnn_outdim"],
         "cnn_downsample": config["cnn_downsample"],
+        "pool": config["pool"],
         "lin_depth": config.get("lin_depth", 1),
         "lin_width": config.get("lin_width", 256),
     }
@@ -136,7 +140,7 @@ def get_models(config, loader, device, debug=False):
             x = x.to(device)
             for i, model in enumerate(models):
                 print(f"NUMBER {i+1}")
-                summary(model, x.to(device), y)
+                summary(model, x.to(device))
             break
 
     return models

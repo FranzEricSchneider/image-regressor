@@ -10,19 +10,25 @@ from torchvision.datasets import DatasetFolder, folder
 # Inspired by
 # https://towardsdatascience.com/using-shap-to-debug-a-pytorch-image-regression-model-4b562ddef30d
 class ImageDataset(torch.utils.data.Dataset):
-    def __init__(self, paths, transform, key, extension):
+    def __init__(self, paths, transform, key, extension, channels):
 
         self.transform = transform
         self.paths = paths
         self.key = key
         self.extension = extension
+        self.channels = channels
 
     def __getitem__(self, idx):
         """Get image and target value"""
         # Read image
         path = self.paths[idx]
-        image = cv2.cvtColor(cv2.imread(str(path), cv2.IMREAD_COLOR),
-                             cv2.COLOR_BGR2RGB)
+        if self.channels == 3:
+            image = cv2.cvtColor(cv2.imread(str(path), cv2.IMREAD_COLOR),
+                                 cv2.COLOR_BGR2RGB)
+        elif self.channels == 1:
+            image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        else:
+            raise ValueError(f"Channels={self.channels} not supported")
         image = Image.fromarray(image)
         # Transform image
         image = self.transform(image)
@@ -39,7 +45,7 @@ class ImageDataset(torch.utils.data.Dataset):
         return len(self.paths)
 
 
-def build_loader(data_path, batch_size, shuffle, key, extension="jpg"):
+def build_loader(data_path, batch_size, shuffle, key, extension, channels):
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,)),
@@ -49,6 +55,7 @@ def build_loader(data_path, batch_size, shuffle, key, extension="jpg"):
         transform=transform,
         key=key,
         extension=extension,
+        channels=channels,
     )
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -65,7 +72,8 @@ def get_loaders(config, debug=False):
     print("Loading data...")
     gc.collect()
 
-    train_loader = val_loader = None
+    # TODO: Consider making a separate validation loader
+    train_loader = None
     if config["train"]:
         train_loader = build_loader(
             data_path=config["data_dir"].joinpath("train"),
@@ -73,6 +81,7 @@ def get_loaders(config, debug=False):
             shuffle=True,
             key=config["regression_key"],
             extension=config["extension"],
+            channels=config["starting_channels"],
         )
     test_loader = build_loader(
         data_path=config["data_dir"].joinpath("test"),
@@ -80,6 +89,7 @@ def get_loaders(config, debug=False):
         shuffle=False,
         key=config["regression_key"],
         extension=config["extension"],
+        channels=config["starting_channels"],
     )
 
     if debug:
@@ -91,8 +101,8 @@ def get_loaders(config, debug=False):
         for name, loader in (("TRAIN", train_loader),
                              ("TEST", test_loader)):
             for x, y in loader:
-                print(f"{name}: x.shape: {x.shape}, y.shape: {y.shape}, y[:10]: {y[:10]}")
+                print(f"{name}: x.shape: {x.shape}, y.shape: {y.shape}, y[:4]: {y[:4].flatten()}")
                 break
         print("=" * 80)
 
-    return train_loader, val_loader, test_loader
+    return train_loader, test_loader
