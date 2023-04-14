@@ -4,7 +4,7 @@ CONFIG = {
     "regression_key": "value",
     "starting_channels": 1,
 
-    "wandb": True,
+    "wandb": False,
     "wandb_print": ["batch_size",
                     "lr",
                     "cnn_depth",
@@ -42,9 +42,13 @@ CONFIG = {
     "cnn_width": 256,
     "cnn_outdim": 128,
     "cnn_downsample": 4,
+    "cnn_batchnorm": True,
+    "cnn_dropout": None,
     "pool": "avg",
     "lin_depth": 3,
     "lin_width": 256,
+    "lin_batchnorm": True,
+    "lin_dropout": None,
 
     # How many epochs between validation checks (can take a while)
     "eval_report_iter": 1,

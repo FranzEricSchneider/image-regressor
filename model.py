@@ -15,9 +15,13 @@ class Network(nn.Module):
                  cnn_width,
                  cnn_outdim,
                  cnn_downsample,
+                 cnn_batchnorm,
+                 cnn_dropout,
                  pool,
                  lin_depth,
-                 lin_width):
+                 lin_width,
+                 lin_batchnorm,
+                 lin_dropout):
         super(Network, self).__init__()
 
         self.embedding = None
@@ -42,8 +46,11 @@ class Network(nn.Module):
                                     kernel_size=cnn_kernel,
                                     stride=stride))
             if i < cnn_depth - 1:
-                layers.append(nn.BatchNorm2d(out_channels))
+                if cnn_batchnorm:
+                    layers.append(nn.BatchNorm2d(out_channels))
                 layers.append(nn.ReLU())
+                if cnn_dropout is not None:
+                    layers.append(nn.Dropout(p=cnn_dropout))
         self.embedding = nn.Sequential(*layers)
 
         # Pool all features into one across the image
@@ -66,8 +73,11 @@ class Network(nn.Module):
             if i == lin_depth - 1:
                 pass
             else:
-                layers.append(nn.BatchNorm1d(out_features))
+                if lin_batchnorm:
+                    layers.append(nn.BatchNorm1d(out_features))
                 layers.append(nn.ReLU())
+                if lin_dropout is not None:
+                    layers.append(nn.Dropout(p=lin_dropout))
         self.classification = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -86,9 +96,13 @@ def network_kwargs(config):
         "cnn_width": config["cnn_width"],
         "cnn_outdim": config["cnn_outdim"],
         "cnn_downsample": config["cnn_downsample"],
+        "cnn_batchnorm": config["cnn_batchnorm"],
+        "cnn_dropout": config["cnn_dropout"],
         "pool": config["pool"],
         "lin_depth": config.get("lin_depth", 1),
         "lin_width": config.get("lin_width", 256),
+        "lin_batchnorm": config["lin_batchnorm"],
+        "lin_dropout": config["lin_dropout"],
     }
 
 

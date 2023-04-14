@@ -55,9 +55,13 @@ def load_config():
     parser.add_argument("-t", "--cnn-width", type=int, default=None)
     parser.add_argument("-o", "--cnn-outdim", type=int, default=None)
     parser.add_argument("-s", "--cnn-downsample", type=int, default=None)
+    parser.add_argument("-r", "--cnn-dropout", type=float, default=None)
+    parser.add_argument("-a", "--cnn-batchnorm", action="store_true", default=None)
     parser.add_argument("-p", "--pool", default=None)
     parser.add_argument("-D", "--lin-depth", type=int, default=None)
     parser.add_argument("-W", "--lin-width", type=int, default=None)
+    parser.add_argument("-R", "--lin-dropout", type=float, default=None)
+    parser.add_argument("-A", "--lin-batchnorm", action="store_true", default=None)
     args = parser.parse_args()
 
     for key in ("data_dir",
@@ -70,9 +74,13 @@ def load_config():
                 "cnn_width",
                 "cnn_outdim",
                 "cnn_downsample",
+                "cnn_batchnorm",
+                "cnn_dropout",
                 "pool",
                 "lin_depth",
-                "lin_width"):
+                "lin_width",
+                "lin_batchnorm",
+                "lin_dropout"):
         value = getattr(args, key)
         if value is not None:
             config[key] = value
