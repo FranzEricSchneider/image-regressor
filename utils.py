@@ -50,6 +50,9 @@ def load_config():
     parser.add_argument("-e", "--epochs", type=int, default=None)
     parser.add_argument("-l", "--lr", type=float, default=None)
     parser.add_argument("-w", "--wd", type=float, default=None)
+    parser.add_argument("--use-existing", default=None)
+    parser.add_argument("--pretrained", action="store_true", default=None)
+    parser.add_argument("--frozen-embedding", action="store_true", default=None)
     parser.add_argument("-d", "--cnn-depth", type=int, default=None)
     parser.add_argument("-k", "--cnn-kernel", type=int, default=None)
     parser.add_argument("-t", "--cnn-width", type=int, default=None)
@@ -69,6 +72,9 @@ def load_config():
                 "batch_size",
                 "lr",
                 "wd",
+                "use_existing",
+                "pretrained",
+                "frozen_embedding",
                 "cnn_depth",
                 "cnn_kernel",
                 "cnn_width",

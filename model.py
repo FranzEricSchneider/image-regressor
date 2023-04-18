@@ -1,14 +1,145 @@
 import os
 import torch
 from torch import nn
+import torchvision
 from torchsummaryX import summary
 import yaml
 import wandb
 
 
+def existing_as_embedder(name, in_channels, pretrained):
+    model_function = getattr(torchvision.models, name)
+    model = model_function(pretrained=pretrained)
+
+    modules = [m for m in model.children()]
+
+    # Potentially replace the first layer if the starting channel # is wrong
+    # Then replace the pooling/linear layers
+    # Then get the out channels
+    if name.startswith("resnet"):
+        modules[0] = replace_conv2d_if_needed(modules[0], in_channels)
+
+        assert isinstance(modules[-2], nn.modules.pooling.AdaptiveAvgPool2d)
+        assert isinstance(modules[-1], nn.Linear)
+        modules = modules[:-2]
+
+        norm = [m for m in modules[-1][-1].children()][-2]
+        assert isinstance(norm, nn.BatchNorm2d)
+        out_channels = norm.num_features
+
+    elif name.startswith("vgg"):
+        modules[0][0] = replace_conv2d_if_needed(modules[0][0], in_channels)
+
+        assert isinstance(modules[-2], nn.modules.pooling.AdaptiveAvgPool2d)
+        assert isinstance(modules[-1], nn.Sequential)
+        assert isinstance(modules[-1][0], nn.Linear)
+        modules = modules[:-2]
+
+        if name.endswith("bn"):
+            norm = [m for m in modules[-1].children()][-3]
+            assert isinstance(norm, nn.BatchNorm2d)
+            out_channels = norm.num_features
+        else:
+            conv2d = [m for m in modules[-1].children()][-3]
+            assert isinstance(conv2d, nn.Conv2d)
+            out_channels = conv2d.out_channels
+
+    elif name.startswith("inception"):
+        modules[0].conv = replace_conv2d_if_needed(modules[0].conv, in_channels)
+
+        assert isinstance(modules[-3], nn.modules.pooling.AdaptiveAvgPool2d)
+        assert isinstance(modules[-2], nn.Dropout)
+        assert isinstance(modules[-1], nn.Linear)
+        modules = modules[:-3]
+
+        norm = modules[-1].branch_pool.bn
+        assert isinstance(norm, nn.BatchNorm2d)
+        out_channels = norm.num_features
+
+    elif name.startswith("densenet"):
+        modules[0][0] = replace_conv2d_if_needed(modules[0][0], in_channels)
+
+        assert isinstance(modules[-1], nn.Linear)
+        modules = modules[:-1]
+
+        norm = modules[-1][-1]
+        assert isinstance(norm, nn.BatchNorm2d)
+        out_channels = norm.num_features
+
+    elif name.startswith("mobilenet"):
+        modules[0][0][0] = replace_conv2d_if_needed(modules[0][0][0], in_channels)
+
+        if name.endswith("v2"):
+            assert isinstance(modules[-2], nn.Sequential)
+            assert isinstance(modules[-1][0], nn.Dropout)
+            assert isinstance(modules[-1][1], nn.Linear)
+            assert len(modules[-1]) == 2
+            modules = modules[:-1]
+        else:
+            assert isinstance(modules[-2], nn.AdaptiveAvgPool2d)
+            assert isinstance(modules[-1][0], nn.Linear)
+            assert isinstance(modules[-1][1], nn.Hardswish)
+            assert isinstance(modules[-1][2], nn.Dropout)
+            assert isinstance(modules[-1][3], nn.Linear)
+            assert len(modules[-1]) == 4
+            modules = modules[:-2]
+
+        norm = modules[-1][-1][1]
+        assert isinstance(norm, nn.BatchNorm2d)
+        out_channels = norm.num_features
+
+    elif name.startswith("efficientnet"):
+        modules[0][0][0] = replace_conv2d_if_needed(modules[0][0][0], in_channels)
+
+        assert isinstance(modules[-2], nn.AdaptiveAvgPool2d)
+        assert isinstance(modules[-1][0], nn.Dropout)
+        assert isinstance(modules[-1][1], nn.Linear)
+        assert len(modules[-1]) == 2
+        modules = modules[:-2]
+
+        norm = modules[-1][-1][-2]
+        assert isinstance(norm, nn.BatchNorm2d)
+        out_channels = norm.num_features
+
+    else:
+        raise NotImplementedError()
+
+    return nn.Sequential(*modules), out_channels
+
+
+def replace_conv2d_if_needed(conv2d, in_channels):
+    '''
+    Replaces a Conv2d layer with a similar layer but with the right number of
+    input channels.
+    '''
+    assert isinstance(conv2d, nn.Conv2d)
+    if conv2d.in_channels != in_channels:
+        if isinstance(conv2d.bias, bool):
+            bias = conv2d.bias
+        else:
+            if conv2d.bias is None:
+                bias = False
+            else:
+                bias = True
+        new_conv2d = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=conv2d.out_channels,
+            kernel_size=conv2d.kernel_size,
+            stride=conv2d.stride,
+            padding=conv2d.padding,
+            bias=bias,
+        )
+        return new_conv2d
+    else:
+        return conv2d
+
+
 class Network(nn.Module):
 
     def __init__(self,
+                 use_existing,
+                 pretrained,
+                 frozen_embedding,
                  starting_channels,
                  cnn_depth,
                  cnn_kernel,
@@ -24,34 +155,43 @@ class Network(nn.Module):
                  lin_dropout):
         super(Network, self).__init__()
 
-        self.embedding = None
-        layers = []
-        downsampled = 1
-        for i in range(cnn_depth):
+        if use_existing is not None:
+            self.embedding, cnn_outdim = existing_as_embedder(
+                use_existing,
+                starting_channels,
+                pretrained,
+            )
+            if frozen_embedding:
+                for param in self.embedding.parameters():
+                    param.requires_grad = False
+        else:
+            layers = []
+            downsampled = 1
+            for i in range(cnn_depth):
 
-            in_channels = cnn_width
-            out_channels = cnn_width
-            if i == 0:
-                in_channels = starting_channels
-            if i == cnn_depth - 1:
-                out_channels = cnn_outdim
+                in_channels = cnn_width
+                out_channels = cnn_width
+                if i == 0:
+                    in_channels = starting_channels
+                if i == cnn_depth - 1:
+                    out_channels = cnn_outdim
 
-            if downsampled < cnn_downsample:
-                stride = 2
-                downsampled *= 2
-            else:
-                stride = 1
-            layers.append(nn.Conv2d(in_channels,
-                                    out_channels,
-                                    kernel_size=cnn_kernel,
-                                    stride=stride))
-            if i < cnn_depth - 1:
-                if cnn_batchnorm:
-                    layers.append(nn.BatchNorm2d(out_channels))
-                layers.append(nn.ReLU())
-                if cnn_dropout is not None:
-                    layers.append(nn.Dropout(p=cnn_dropout))
-        self.embedding = nn.Sequential(*layers)
+                if downsampled < cnn_downsample:
+                    stride = 2
+                    downsampled *= 2
+                else:
+                    stride = 1
+                layers.append(nn.Conv2d(in_channels,
+                                        out_channels,
+                                        kernel_size=cnn_kernel,
+                                        stride=stride))
+                if i < cnn_depth - 1:
+                    if cnn_batchnorm:
+                        layers.append(nn.BatchNorm2d(out_channels))
+                    layers.append(nn.ReLU())
+                    if cnn_dropout is not None:
+                        layers.append(nn.Dropout(p=cnn_dropout))
+            self.embedding = nn.Sequential(*layers)
 
         # Pool all features into one across the image
         if pool == "avg":
@@ -90,6 +230,9 @@ class Network(nn.Module):
 
 def network_kwargs(config):
     return {
+        "use_existing": config["use_existing"],
+        "pretrained": config["pretrained"],
+        "frozen_embedding": config["frozen_embedding"],
         "starting_channels": config["starting_channels"],
         "cnn_depth": config["cnn_depth"],
         "cnn_kernel": config["cnn_kernel"],

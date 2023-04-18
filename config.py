@@ -37,6 +37,22 @@ CONFIG = {
     "batch_size": 1024,  # Increase if you can handle it, generally
     "epochs": 20,
     "wd": 0.01,
+
+    # TODO: Try out all of these models on bigger input pictures
+    # None
+    # resnet18, resnet34, resnet50, resnet101, resnet152,
+    # vgg11, vgg11_bn, vgg13, vgg13_bn, vgg16, vgg16_bn, vgg19, vgg19_bn
+    # inception_v3
+    # densenet121, densenet161, densenet169, densenet201
+    # mobilenet_v2, mobilenet_v3_large, mobilenet_v3_small
+    # efficientnet_b0, efficientnet_b1, efficientnet_b2, efficientnet_b3,
+    # efficientnet_b4, efficientnet_b5, efficientnet_b6, efficientnet_b7,
+    # efficientnet_v2_s, efficientnet_v2_m, efficientnet_v2_l
+    "use_existing": "efficientnet_b0",
+    "pretrained": True,
+    "frozen_embedding": False,
+
+    # Used only when not using an existing encoder
     "cnn_depth": 3,
     "cnn_kernel": 3,
     "cnn_width": 256,
