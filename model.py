@@ -23,7 +23,10 @@ def existing_as_embedder(name, in_channels, pretrained):
         assert isinstance(modules[-1], nn.Linear)
         modules = modules[:-2]
 
-        norm = [m for m in modules[-1][-1].children()][-2]
+        if name.endswith("18") or name.endswith("34"):
+            norm = [m for m in modules[-1][-1].children()][-1]
+        else:
+            norm = [m for m in modules[-1][-1].children()][-2]
         assert isinstance(norm, nn.BatchNorm2d)
         out_channels = norm.num_features
 
