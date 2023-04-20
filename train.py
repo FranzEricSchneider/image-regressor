@@ -1,6 +1,9 @@
+import cv2
 import datetime
 import gc
 import numpy
+from pathlib import Path
+import time
 from tqdm import tqdm
 import torch
 from torch import nn
@@ -51,8 +54,23 @@ def sanity_check(criterion, loader, model, device):
             break
 
 
+def save_debug_images(x, savedir):
+    timestamp = str(int(time.time() * 1e6))
+    for i, torch_img in enumerate(x):
+        name = f"debug_{timestamp}_{i}.jpg"
+        float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
+        uint8_image = (float_image * 255).astype(numpy.uint8)
+        if uint8_image.shape[2] == 3:
+            uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(
+            str(savedir.joinpath(name)),
+            uint8_image,
+        )
+    print(f"Saved images as {savedir.joinpath('debug')}_{timestamp}_0-{len(x) - 1}.jpg")
+
+
 def train_step(loader, model, optimizer, criterion, scaler, config, device,
-               scheduler=None, log_loss=False):
+               scheduler=None, log_loss=False, log_images=False):
 
     model.train()
     batch_bar = tqdm(total=len(loader),
@@ -63,6 +81,9 @@ def train_step(loader, model, optimizer, criterion, scaler, config, device,
     train_loss = 0
 
     for i, (x, y) in enumerate(loader):
+
+        if log_images:
+            save_debug_images(x, Path("/tmp/"))
 
         # Zero gradients (necessary to call explicitly in case you have split
         # training up across multiple devices)
@@ -157,7 +178,8 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
                    "criterion": criterion,
                    "scaler": scaler,
                    "config": config,
-                   "device": device}
+                   "device": device,
+                   "log_images": config["log_images"]}
     if debug:
         sanity_check(criterion, train_loader, model, device)
 

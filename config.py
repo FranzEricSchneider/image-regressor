@@ -13,6 +13,9 @@ CONFIG = {
     ],
     "keyfile": "/hdd/wandb.json",
     "train": True,
+    # Option to log images during training to the /tmp/ dir for visualization.
+    # This is likely a slowdown so should be used for debugging.
+    "log_images": False,
 
     "models": [],
     # "models": ["checkpoint.pth"],
