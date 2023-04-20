@@ -48,6 +48,12 @@ def existing_as_embedder(name, in_channels, pretrained):
             out_channels = conv2d.out_channels
 
     elif name.startswith("inception"):
+        raise NotImplementedError(
+            "Something weird is happening here with inception where just"
+            " replacing the first Conv2d is insufficient. Would need to read"
+            " the paper and potentially replace other layers as well to get it"
+            " to work. I suspect there are parallel pathways."
+        )
         modules[0].conv = replace_conv2d_if_needed(modules[0].conv, in_channels)
 
         assert isinstance(modules[-3], nn.modules.pooling.AdaptiveAvgPool2d)
@@ -266,6 +272,11 @@ def load_wandb_config(run_path):
     return loaded_config
 
 
+# https://discuss.pytorch.org/t/how-do-i-check-the-number-of-parameters-of-a-model/4325/8
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 def get_models(config, loader, device, debug=False):
 
     torch.cuda.empty_cache()
@@ -302,5 +313,11 @@ def get_models(config, loader, device, debug=False):
                 print(f"NUMBER {i+1}")
                 summary(model, x.to(device))
             break
+
+    # Save the model size in the config
+    config["model_sizes"] = {
+        f"model-{i}": count_parameters(model)
+        for i, model in enumerate(models)
+    }
 
     return models

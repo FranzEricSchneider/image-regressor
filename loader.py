@@ -1,6 +1,7 @@
 import cv2
 import gc
 import json
+from pathlib import Path
 from PIL import Image
 import torch
 import torchvision.transforms as transforms
@@ -45,11 +46,16 @@ class ImageDataset(torch.utils.data.Dataset):
         return len(self.paths)
 
 
-def build_loader(data_path, batch_size, shuffle, key, extension, channels):
+def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
+                 channels):
+
+    augpath = Path(augpath)
+    assert augpath.is_file()
     transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,)),
+        getattr(transforms, name)(**kwargs)
+        for name, kwargs in json.load(augpath.open("r"))
     ])
+
     dataset = ImageDataset(
         paths=sorted(data_path.glob(f"*{extension}")),
         transform=transform,
@@ -78,6 +84,7 @@ def get_loaders(config, debug=False):
         train_loader = build_loader(
             data_path=config["data_dir"].joinpath("train"),
             batch_size=config["batch_size"],
+            augpath=config["train_augmentation_path"],
             shuffle=True,
             key=config["regression_key"],
             extension=config["extension"],
@@ -86,6 +93,7 @@ def get_loaders(config, debug=False):
     test_loader = build_loader(
         data_path=config["data_dir"].joinpath("test"),
         batch_size=config["batch_size"],
+        augpath=config["test_augmentation_path"],
         shuffle=False,
         key=config["regression_key"],
         extension=config["extension"],
