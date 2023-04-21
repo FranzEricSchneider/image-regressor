@@ -15,7 +15,7 @@ CONFIG = {
     "train": True,
     # Option to log images during training to the /tmp/ dir for visualization.
     # This is likely a slowdown so should be used for debugging.
-    "log_images": False,
+    "log_images": True,
 
     "models": [],
     # "models": ["checkpoint.pth"],

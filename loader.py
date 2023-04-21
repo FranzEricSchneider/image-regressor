@@ -5,6 +5,7 @@ import json
 import numpy
 from pathlib import Path
 from PIL import Image
+from scipy import signal
 import torch
 import torchvision.transforms as transforms
 from torchvision.datasets import DatasetFolder, folder
@@ -22,7 +23,8 @@ class ImageDataset(torch.utils.data.Dataset):
         self.channels = channels
 
     def __getitem__(self, idx):
-        """Get image and target value"""
+        '''Get image and target value'''
+
         # Read image
         path = self.paths[idx]
         if self.channels == 3:
@@ -125,11 +127,11 @@ def get_loaders(config, debug=False):
 
 
 class CutoutBoxes(object):
-    """
+    '''
     Custom Cutout augmentation (modified from below to remove bbox stuff)
     Note: (only supports square cutout regions)
     https://www.kaggle.com/code/kaushal2896/data-augmentation-tutorial-basic-cutout-mixup
-    """
+    '''
 
     def __init__(
         self,
@@ -139,12 +141,12 @@ class CutoutBoxes(object):
         num_cutouts=5,
         p=0.5,
     ):
-        """
+        '''
         Class constructor
         :param fill_value: Value to be filled in cutout (default is 0 or black color)
         :param min_cut_ratio: minimum size of cutout (192 x 192)
         :param max_cut_ratio: maximum size of cutout (512 x 512)
-        """
+        '''
         self.fill_value = fill_value
         self.min_cut_ratio = min_cut_ratio
         self.max_cut_ratio = max_cut_ratio
@@ -152,14 +154,14 @@ class CutoutBoxes(object):
         self.p = p
 
     def _get_cutout_position(self, img_height, img_width, cutout_size):
-        """
+        '''
         Randomly generates cutout position as a named tuple
 
         :param img_height: height of the original image
         :param img_width: width of the original image
         :param cutout_size: size of the cutout patch (square)
         :returns position of cutout patch as a named tuple
-        """
+        '''
         position = namedtuple('Point', 'x y')
         return position(
             numpy.random.randint(0, img_width - cutout_size + 1),
@@ -167,13 +169,13 @@ class CutoutBoxes(object):
         )
 
     def _get_cutout(self, img_height, img_width):
-        """
+        '''
         Creates a cutout pacth with given fill value and determines the position in the original image
 
         :param img_height: height of the original image
         :param img_width: width of the original image
         :returns (cutout patch, cutout size, cutout position)
-        """
+        '''
         min_side = min(img_height, img_width)
         cutout_size = numpy.random.randint(
             int(min_side * self.min_cut_ratio),
@@ -183,12 +185,12 @@ class CutoutBoxes(object):
         return (cutout_size, cutout_position)
 
     def __call__(self, image):
-        """
+        '''
         Applies the cutout augmentation on the given image
 
         :param image: The image to be augmented
         :returns augmented image
-        """
+        '''
 
         if torch.rand(1) > self.p:
             return image
@@ -200,3 +202,146 @@ class CutoutBoxes(object):
                   cutout_pos.x:cutout_size+cutout_pos.x] = self.fill_value
 
         return image
+
+
+class SunGlare(object):
+    '''
+    Custom brightness augmentation.
+    '''
+
+    def __init__(
+        self,
+        max_added_brightness=(0.2, 0.5),
+        std_ratio=(0.03, 0.08),
+        w_to_h_ratio=(0.75, 1.25),
+        p=0.5,
+    ):
+        '''
+        TODO
+        '''
+
+        self.max_added_brightness = max_added_brightness
+        self.std_ratio = std_ratio
+        self.w_to_h_ratio = w_to_h_ratio
+        self.p = p
+
+    def _gaussian_kernel(self, sidelen, std):
+        '''Returns a 2D Gaussian kernel array.'''
+        kernel_1d = signal.gaussian(sidelen, std=std).reshape(sidelen, 1)
+        return numpy.outer(kernel_1d, kernel_1d)
+
+    def _get_fill(self, img_height, img_width):
+        min_side = min(img_height, img_width)
+        radius = numpy.random.randint(int(min_side * self.std_ratio[0]),
+                                      int(min_side * self.std_ratio[1]))
+        kernel = self._gaussian_kernel(sidelen=8*radius, std=radius)
+
+        # Cap value
+        maxval = numpy.random.uniform(*self.max_added_brightness)
+        fill = kernel * maxval / kernel.max()
+
+        # Deform
+        w_to_h = numpy.random.uniform(*self.w_to_h_ratio)
+        new_height = int(kernel.shape[1] * w_to_h)
+        fill = cv2.resize(src=fill, dsize=(kernel.shape[1], new_height))
+
+        return fill
+
+    def _get_slices(self, img_height, img_width, fill):
+        '''
+        TODO: Explain (complicated)
+        '''
+
+        position = namedtuple('Point', 'x y')
+        start = position(
+            numpy.random.randint(-fill.shape[1]//2, img_width//2 + 1),
+            numpy.random.randint(-fill.shape[0]//2, img_height//2 + 1),
+        )
+
+        return (
+            (
+                slice(max(0, start.y), min(img_height, start.y + fill.shape[0])),
+                slice(max(0, start.x), min(img_width, start.x + fill.shape[1])),
+            ),
+            (
+                slice(max(-start.y, 0), min(img_height - start.y, fill.shape[0])),
+                slice(max(-start.x, 0), min(img_width - start.x, fill.shape[1])),
+            ),
+        )
+
+    def __call__(self, image):
+
+        if torch.rand(1) > self.p:
+            return image
+
+        fill = self._get_fill(*image.shape[1:])
+        im_slices, fill_slices = self._get_slices(*image.shape[1:], fill)
+        image[:, im_slices[0], im_slices[1]] = \
+            image[:, im_slices[0], im_slices[1]] + fill[fill_slices[0], fill_slices[1]]
+
+        return torch.clamp(image, 0, 1)
+
+
+class ShadowBar(object):
+    '''
+    Custom shadowed augmentation.
+    '''
+
+    def __init__(
+        self,
+        max_shade=(0.2, 0.5),
+        sides_available=(0, 1, 2, 3),
+        width_ratio=(0.15, 0.5),
+        p=0.5,
+    ):
+        '''
+        TODO
+            sides_available: I'm just making this up, but let's make the sides
+                available 0 (top), 1 (bottom), 2 (left), and 3 (right)
+        '''
+
+        self.max_shade = max_shade
+        self.sides_available = sides_available
+        self.width_ratio = width_ratio
+        self.p = p
+
+    def _get_mask(self, img_height, img_width):
+
+        # Make these mappings based on which number means which side
+        side_lens = {0: img_width, 1: img_width, 2: img_height, 3: img_height}
+
+        # Get the start and end point
+        pts = []
+        for side in numpy.random.choice(self.sides_available,
+                                        size=2,
+                                        replace=False):
+            randlen = numpy.random.randint(0, side_lens[side])
+            if side == 0:
+                pts.append([randlen, 0])
+            elif side == 1:
+                pts.append([randlen, img_height])
+            elif side == 2:
+                pts.append([0, randlen])
+            else:
+                pts.append([img_width, randlen])
+
+        # Get the width
+        min_side = min(img_height, img_width)
+        width = int(numpy.random.uniform(*self.width_ratio) * min_side)
+
+        mask = numpy.zeros((img_height, img_width), dtype=float)
+        mask = cv2.line(img=mask, pt1=pts[0], pt2=pts[1], color=1, thickness=width)
+        return mask.astype(bool)
+
+    def __call__(self, image):
+
+        if torch.rand(1) > self.p:
+            return image
+
+        shade_val = numpy.random.uniform(*self.max_shade)
+        mask = self._get_mask(*image.shape[1:])
+
+        shade_fill = mask.astype(numpy.float32) * shade_val
+        image = image - shade_fill
+
+        return torch.clamp(image, 0, 1)
