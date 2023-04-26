@@ -1,21 +1,23 @@
 CONFIG = {
     "data_dir": None,
-    "extension": "jpg",
-    "regression_key": "value",
-    "starting_channels": 1,
+    "extension": "png",
+    "regression_key": "coverage",
+    "starting_channels": 3,
 
-    "wandb": False,
+    "wandb": True,
     "wandb_print":
     [
-        "use_existing",
-        "lr",
         "pool",
+        "train_augmentation_path",
     ],
     "keyfile": "/hdd/wandb.json",
     "train": True,
     # Option to log images during training to the /tmp/ dir for visualization.
     # This is likely a slowdown so should be used for debugging.
-    "log_images": True,
+    "log_images": False,
+    "num_vis_images": 1,
+    # Choose between "all" or a list of layer indices
+    "idx_vis_layers": [0, 1],
 
     "models": [],
     # "models": ["checkpoint.pth"],
@@ -40,8 +42,12 @@ CONFIG = {
     "train_augmentation_path": "./train_augmentations.json",
     "test_augmentation_path": "./test_augmentations.json",
 
-    "batch_size": 32,  # Increase if you can handle it, generally
-    "epochs": 20,
+    # Increase if you can handle it, generally
+    # "batch_size": 32,  # MNIST scaled up
+    # "batch_size": 24,  # Beets
+    "batch_size": 100,  # Outdoors @ //4,//4
+    # "epochs": 8,  # Beets
+    "epochs": 40,  # Outdoors
     "wd": 0.01,
 
     # TODO: Try out all of these models on bigger input pictures

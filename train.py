@@ -10,6 +10,7 @@ from torch import nn
 import wandb
 
 from scheduler import get_scheduler
+from vis import vis_model
 
 
 numpy.set_printoptions(suppress=True, precision=3)
@@ -223,6 +224,11 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
             )
             if config["wandb"]:
                 wandb.save("checkpoint.pth")
+                vis_model([model],
+                          config,
+                          (val_loader, train_loader),
+                          device,
+                          prefixes=("train-val", "train-train"))
             best_val_loss = val_loss
 
     if run is not None:

@@ -7,6 +7,16 @@ import yaml
 import wandb
 
 
+def flattener(sequential):
+    assert isinstance(sequential, nn.Sequential)
+    for item in sequential:
+        if isinstance(item, nn.Sequential):
+            for recurse_item in flattener(item):
+                yield recurse_item
+        else:
+            yield item
+
+
 def existing_as_embedder(name, in_channels, pretrained):
     model_function = getattr(torchvision.models, name)
     model = model_function(pretrained=pretrained)
@@ -227,13 +237,13 @@ class Network(nn.Module):
                 layers.append(nn.ReLU())
                 if lin_dropout is not None:
                     layers.append(nn.Dropout(p=lin_dropout))
-        self.classification = nn.Sequential(*layers)
+        self.classifier = nn.Sequential(*layers)
 
     def forward(self, x):
         x = self.embedding(x)
         x = self.pool(x)
-        x = torch.squeeze(x)
-        x = self.classification(x)
+        x = torch.squeeze(x, dim=(2, 3))
+        x = self.classifier(x)
         return x
 
 
@@ -312,6 +322,9 @@ def get_models(config, loader, device, debug=False):
             for i, model in enumerate(models):
                 print(f"NUMBER {i+1}")
                 summary(model, x.to(device))
+                print("FLATTENED EMBEDDING")
+                for i, element in enumerate(flattener(model.embedding)):
+                    print(f"IDX: {i}\n{element})")
             break
 
     # Save the model size in the config

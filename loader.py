@@ -42,7 +42,7 @@ class ImageDataset(torch.utils.data.Dataset):
         return image, target
 
     def get_target(self, path):
-        name = path.name.replace(self.extension, "json")
+        name = path.with_suffix(".json").name
         metadata = json.load(path.parent.joinpath(name).open("r"))
         return [metadata[self.key]]
 
