@@ -307,11 +307,7 @@ def get_models(config, loader, device, debug=False):
                 wandb.restore(**settings)
                 load_file = f"{settings['run_path'].replace('/', '_')}.pth"
                 os.rename(settings["name"], load_file)
-                try:
-                    kwargs = network_kwargs(load_wandb_config(settings["run_path"]))
-                except ValueError:
-                    # No file found in wandb
-                    kwargs = network_kwargs(config)
+                kwargs = network_kwargs(load_wandb_config(settings["run_path"]))
             else:
                 raise NotImplementedError(f"Unknown setting type for {config['models']}")
             model = Network(**kwargs).to(device)

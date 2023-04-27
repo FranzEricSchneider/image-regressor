@@ -7,14 +7,14 @@ from matplotlib import pyplot
 import numpy
 from pathlib import Path
 from PIL import Image
+import time
 import torch
 from torch import nn
 import torch.nn.functional as F
 import wandb
 
 from loader import build_loader
-from model import flattener
-from train import save_debug_images
+from model import flattener, get_models
 from utils import system_check
 
 
@@ -46,14 +46,50 @@ def scale_0_1(matrix):
     return (matrix - matrix.min()) / (matrix.max() - matrix.min())
 
 
-def visually_label_images(imdir, save_dir, run_path, augmentation, extension,
+def save_debug_images(x, savedir, prefix="debug", labels=None):
+
+    if labels is None:
+        labels = [None] * len(x)
+
+    timestamp = str(int(time.time() * 1e6))
+
+    for i, (torch_img, label) in enumerate(zip(x, labels)):
+        name = f"{prefix}_{timestamp}_{i}.jpg"
+        float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
+        uint8_image = (float_image * 255).astype(numpy.uint8)
+        if uint8_image.shape[2] == 3:
+            uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+        if label is not None:
+            white = 255
+            black = 0
+            if len(uint8_image.shape) == 3 and uint8_image.shape[2] == 3:
+                white = (255, 255, 255)
+                black = (0, 0, 0)
+            uint8_image[:50, :100] = white
+            cv2.putText(img=uint8_image,
+                        text=f"{label:.1f}",
+                        org=(10, 30),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale=1,
+                        color=black,
+                        thickness=2)
+
+        cv2.imwrite(
+            str(savedir.joinpath(name)),
+            uint8_image,
+        )
+
+    print(f"Saved images as {savedir.joinpath(prefix)}_{timestamp}_0-{len(x) - 1}.jpg")
+
+
+def visually_label_images(imdir, savedir, run_path, augmentation, extension,
                           number, key, shuffle):
 
     num_cpus, device = system_check()
     models = get_models(
-        config={"models": {"name": "checkpoint.pth",
-                           "run_path": run_path,
-                           "replace": True}},
+        config={"models": [
+            {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
+        ]},
         loader=None,
         device=device,
         debug=False,
@@ -65,7 +101,7 @@ def visually_label_images(imdir, save_dir, run_path, augmentation, extension,
 
     loader = build_loader(
         data_path=imdir,
-        batch_size=number,
+        batch_size=2,
         augpath=augmentation,
         shuffle=shuffle,
         key=key,
@@ -74,9 +110,14 @@ def visually_label_images(imdir, save_dir, run_path, augmentation, extension,
         channels=3,
     )
 
+    count = 0
     for x, _ in loader:
-        values = model(x)
-        import ipdb; ipdb.set_trace()
+        x = x.to(device)
+        values = model(x).detach().cpu().numpy().flatten()
+        save_debug_images(x, savedir, labels=values)
+        count += len(values)
+        if count >= number:
+            break
 
 
 '''
@@ -249,7 +290,7 @@ if __name__ == "__main__":
 
     visually_label_images(
         imdir=args.image_directory,
-        save_dir=args.output_directory,
+        savedir=args.output_directory,
         run_path=args.wandb_run_path,
         augmentation=args.augmentation,
         extension=args.extension,

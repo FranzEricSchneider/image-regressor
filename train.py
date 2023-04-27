@@ -10,7 +10,7 @@ from torch import nn
 import wandb
 
 from scheduler import get_scheduler
-from vis import vis_model
+from vis import save_debug_images, vis_model
 
 
 numpy.set_printoptions(suppress=True, precision=3)
@@ -53,21 +53,6 @@ def sanity_check(criterion, loader, model, device):
             print(f"Mean squared prediction error: {loss}")
 
             break
-
-
-def save_debug_images(x, savedir, prefix="debug", labels=None):
-    timestamp = str(int(time.time() * 1e6))
-    for i, torch_img in enumerate(x):
-        name = f"{prefix}_{timestamp}_{i}.jpg"
-        float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
-        uint8_image = (float_image * 255).astype(numpy.uint8)
-        if uint8_image.shape[2] == 3:
-            uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(
-            str(savedir.joinpath(name)),
-            uint8_image,
-        )
-    print(f"Saved images as {savedir.joinpath(prefix)}_{timestamp}_0-{len(x) - 1}.jpg")
 
 
 def train_step(loader, model, optimizer, criterion, scaler, config, device,
