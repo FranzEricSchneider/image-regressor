@@ -152,3 +152,4 @@ class ScoreCam():
         axis.set_title(f"Score-CAM layer {self.target_layer}")
         pyplot.tight_layout()
         pyplot.savefig(save_path, dpi=100)
+        pyplot.close(figure)

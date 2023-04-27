@@ -17,7 +17,7 @@ CONFIG = {
     "log_images": False,
     "num_vis_images": 1,
     # Choose between "all" or a list of layer indices
-    "idx_vis_layers": [0, 1],
+    "idx_vis_layers": [3],
 
     "models": [],
     # "models": ["checkpoint.pth"],
