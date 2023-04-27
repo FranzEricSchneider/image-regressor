@@ -287,6 +287,8 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+# TODO: This is set up for use in TRAINING, can it be simplified for execution
+# and inference?
 def get_models(config, loader, device, debug=False):
 
     torch.cuda.empty_cache()
@@ -313,7 +315,12 @@ def get_models(config, loader, device, debug=False):
             else:
                 raise NotImplementedError(f"Unknown setting type for {config['models']}")
             model = Network(**kwargs).to(device)
-            model.load_state_dict(torch.load(load_file, map_location=torch.device(device))["model_state_dict"])
+            model.load_state_dict(
+                torch.load(
+                    load_file,
+                    map_location=torch.device(device)
+                )["model_state_dict"]
+            )
             models.append(model)
 
     if debug:

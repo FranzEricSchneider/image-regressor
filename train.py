@@ -55,10 +55,10 @@ def sanity_check(criterion, loader, model, device):
             break
 
 
-def save_debug_images(x, savedir):
+def save_debug_images(x, savedir, prefix="debug", labels=None):
     timestamp = str(int(time.time() * 1e6))
     for i, torch_img in enumerate(x):
-        name = f"debug_{timestamp}_{i}.jpg"
+        name = f"{prefix}_{timestamp}_{i}.jpg"
         float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
         uint8_image = (float_image * 255).astype(numpy.uint8)
         if uint8_image.shape[2] == 3:
@@ -67,7 +67,7 @@ def save_debug_images(x, savedir):
             str(savedir.joinpath(name)),
             uint8_image,
         )
-    print(f"Saved images as {savedir.joinpath('debug')}_{timestamp}_0-{len(x) - 1}.jpg")
+    print(f"Saved images as {savedir.joinpath(prefix)}_{timestamp}_0-{len(x) - 1}.jpg")
 
 
 def train_step(loader, model, optimizer, criterion, scaler, config, device,

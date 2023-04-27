@@ -1,6 +1,7 @@
 import matplotlib
 matplotlib.use("Agg")
 
+import argparse
 import cv2
 from matplotlib import pyplot
 import numpy
@@ -11,7 +12,10 @@ from torch import nn
 import torch.nn.functional as F
 import wandb
 
+from loader import build_loader
 from model import flattener
+from train import save_debug_images
+from utils import system_check
 
 
 def vis_model(models, config, loaders, device, prefixes):
@@ -40,6 +44,39 @@ def vis_model(models, config, loaders, device, prefixes):
 
 def scale_0_1(matrix):
     return (matrix - matrix.min()) / (matrix.max() - matrix.min())
+
+
+def visually_label_images(imdir, save_dir, run_path, augmentation, extension,
+                          number, key, shuffle):
+
+    num_cpus, device = system_check()
+    models = get_models(
+        config={"models": {"name": "checkpoint.pth",
+                           "run_path": run_path,
+                           "replace": True}},
+        loader=None,
+        device=device,
+        debug=False,
+    )
+    assert len(models) == 1
+    model = models[0]
+    model.to(device)
+    model.eval()
+
+    loader = build_loader(
+        data_path=imdir,
+        batch_size=number,
+        augpath=augmentation,
+        shuffle=shuffle,
+        key=key,
+        extension=extension,
+        # TODO: Expand in the future as necessary
+        channels=3,
+    )
+
+    for x, _ in loader:
+        values = model(x)
+        import ipdb; ipdb.set_trace()
 
 
 '''
@@ -153,3 +190,70 @@ class ScoreCam():
         pyplot.tight_layout()
         pyplot.savefig(save_path, dpi=100)
         pyplot.close(figure)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Label images based on the results of a model for human"
+                    " visualization.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "-i", "--image-directory",
+        help="Directory with all images we want to examine",
+        required=True,
+        type=Path,
+    )
+    parser.add_argument(
+        "-o", "--output-directory",
+        help="Directory with all images we want to examine",
+        required=True,
+        type=Path,
+    )
+    parser.add_argument(
+        "-w", "--wandb-run-path",
+        help="Wandb recorded run (e.g."
+             " 'diplernerz/hw3p2-ablations/3q34k58v' in config)",
+        required=True,
+    )
+    parser.add_argument(
+        "-a", "--augmentation",
+        help="Image extension WITH period (e.g. '.png')",
+        type=Path,
+        default=Path("./test_augmentations.json"),
+    )
+    parser.add_argument(
+        "-e", "--extension",
+        help="Image extension WITH period (e.g. '.png')",
+        default=".png",
+    )
+    parser.add_argument(
+        "-n", "--number",
+        help="Number of images to label",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "-r", "--regression-key",
+        help="Value in the json file associated with the measurement",
+        default="value",
+    )
+    parser.add_argument(
+        "-s", "--shuffle",
+        help="Shuffle images in the folder before selecting <number>",
+        action="store_true",
+    )
+    args = parser.parse_args()
+    assert args.image_directory.is_dir()
+    assert args.output_directory.is_dir()
+
+    visually_label_images(
+        imdir=args.image_directory,
+        save_dir=args.output_directory,
+        run_path=args.wandb_run_path,
+        augmentation=args.augmentation,
+        extension=args.extension,
+        number=args.number,
+        key=args.regression_key,
+        shuffle=args.shuffle,
+    )
