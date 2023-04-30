@@ -206,7 +206,6 @@ class ScoreCam():
                                          mode="bilinear",
                                          align_corners=False)
             if saliency_map.max() == saliency_map.min():
-                print(f"CONTINUING, {self.target_layer}")
                 continue
             norm_saliency_map = scale_0_1(saliency_map)
 
@@ -219,10 +218,16 @@ class ScoreCam():
         cam = numpy.maximum(cam, 0)
         cam = scale_0_1(cam)
         cam = Image.fromarray(cam).resize(input_size[::-1], Image.ANTIALIAS)
-        cam = cv2.cvtColor(numpy.uint8(numpy.array(cam) * 255), cv2.COLOR_GRAY2RGB)
+        cam = numpy.uint8(numpy.array(cam) * 255)
+        if input_image[0].shape[0] == 3:
+            cam = cv2.cvtColor(cam, cv2.COLOR_GRAY2RGB)
 
         original = (input_image[0].permute(1, 2, 0)).detach().cpu().numpy()
+        if input_image[0].shape[0] == 1:
+            original = numpy.squeeze(original)
         original = numpy.uint8(original * 255)
+        if numpy.all(original < 10):
+            original *= 25
 
         figure, axis = pyplot.subplots(figsize=(7, 7))
         axis.imshow(numpy.vstack([original, cam]))

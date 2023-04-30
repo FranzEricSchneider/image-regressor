@@ -171,7 +171,8 @@ class Network(nn.Module):
                  lin_depth,
                  lin_width,
                  lin_batchnorm,
-                 lin_dropout):
+                 lin_dropout,
+                 output_limit):
         super(Network, self).__init__()
 
         if use_existing is not None:
@@ -230,7 +231,15 @@ class Network(nn.Module):
                 out_features = 1
             layers.append(nn.Linear(in_features, out_features))
             if i == lin_depth - 1:
-                pass
+                # If we have an output limit, squish things with a sigmoid and
+                # scale to 0-limit
+                if output_limit is not None:
+                    assert isinstance(output_limit, (int, float))
+                    layers.append(nn.Sigmoid())
+                    layers.append(nn.Linear(1, 1))
+                    layers[-1].weight.data.fill_(output_limit)
+                    layers[-1].bias.data.fill_(0)
+                    layers[-1].requires_grad = False
             else:
                 if lin_batchnorm:
                     layers.append(nn.BatchNorm1d(out_features))
@@ -265,6 +274,7 @@ def network_kwargs(config):
         "lin_width": config.get("lin_width", 256),
         "lin_batchnorm": config["lin_batchnorm"],
         "lin_dropout": config["lin_dropout"],
+        "output_limit": config.get("output_limit", None),
     }
 
 
@@ -337,3 +347,4 @@ def get_models(config, loader, device, debug=False):
     }
 
     return models
+

@@ -46,6 +46,7 @@ def load_config():
     parser.add_argument("data_dir",
                         type=Path,
                         help="Path to dir with all images and labels")
+    parser.add_argument("--wandb-print", nargs="+", default=None)
     parser.add_argument("-b", "--batch-size", type=int, default=None)
     parser.add_argument("-e", "--epochs", type=int, default=None)
     parser.add_argument("-l", "--lr", type=float, default=None)
@@ -66,32 +67,22 @@ def load_config():
     parser.add_argument("-W", "--lin-width", type=int, default=None)
     parser.add_argument("-R", "--lin-dropout", type=float, default=None)
     parser.add_argument("-A", "--lin-batchnorm", action="store_true", default=None)
+    parser.add_argument("--run-paths", nargs="+", default=None)
     args = parser.parse_args()
 
-    for key in ("data_dir",
-                "epochs",
-                "batch_size",
-                "lr",
-                "wd",
-                "train_augmentation_path",
-                "use_existing",
-                "pretrained",
-                "frozen_embedding",
-                "cnn_depth",
-                "cnn_kernel",
-                "cnn_width",
-                "cnn_outdim",
-                "cnn_downsample",
-                "cnn_batchnorm",
-                "cnn_dropout",
-                "pool",
-                "lin_depth",
-                "lin_width",
-                "lin_batchnorm",
-                "lin_dropout"):
-        value = getattr(args, key)
-        if value is not None:
-            config[key] = value
+    # Blindly fill arguments into the config
+    for key in config.keys():
+        if hasattr(args, key)
+            value = getattr(args, key)
+            if value is not None:
+                config[key] = value
+
+    # Handle these cases special
+    if args.run_paths is not None:
+        config["models"] = [
+            {"run_path": run_path, "name": "checkpoint.pth", "replace": True}
+            for run_path in args.run_paths
+        ]
 
     print("\n" + "=" * 36 + " CONFIG " + "=" * 36)
     for k, v in config.items():

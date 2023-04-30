@@ -1,14 +1,14 @@
 CONFIG = {
     "data_dir": None,
     "extension": "png",
-    "regression_key": "coverage",
+    "regression_key": "value",
     "starting_channels": 3,
 
     "wandb": True,
     "wandb_print":
     [
-        "pool",
-        "train_augmentation_path",
+        "beets",
+        "use_existing",
     ],
     "keyfile": "/hdd/wandb.json",
     "train": True,
@@ -39,15 +39,17 @@ CONFIG = {
     # applied in the loader phase. The way to experiment with augmentations is
     # to make a copy of the file, set those that you want, and then select the
     # files one-by-one as a command-line argument.
-    "train_augmentation_path": "./train_augmentations.json",
-    "test_augmentation_path": "./test_augmentations.json",
+    "train_augmentation_path": "./train_aug_ijrr.json",
+    "test_augmentation_path": "./test_aug_ijrr.json",
 
     # Increase if you can handle it, generally
     # "batch_size": 32,  # MNIST scaled up
-    # "batch_size": 24,  # Beets
-    "batch_size": 100,  # Outdoors @ //4,//4
-    # "epochs": 8,  # Beets
-    "epochs": 40,  # Outdoors
+    "batch_size": 24,  # Beets
+    # "batch_size": 100,  # Outdoors @ //4,//4
+    # "batch_size": 52,  # Vines @ //4,//4
+    "epochs": 8,  # Beets
+    # "epochs": 40,  # Outdoors
+    # "epochs": 6,  # Vines
     "wd": 0.01,
 
     # TODO: Try out all of these models on bigger input pictures
@@ -77,6 +79,10 @@ CONFIG = {
     "lin_width": 256,
     "lin_batchnorm": True,
     "lin_dropout": None,
+    # Choices are None or a number. If a number is given, we will squash the
+    # final values with a sigmoid and scale it so it's from 0-limit. If we want
+    # to set the lower limit in the future we can expand this.
+    "output_limit": None,
 
     # How many epochs between validation checks (can take a while)
     "eval_report_iter": 1,
