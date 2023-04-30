@@ -27,13 +27,21 @@ class ImageDataset(torch.utils.data.Dataset):
 
         # Read image
         path = self.paths[idx]
+
+        def has_extension(extensions):
+            return any([path.name.endswith(e) for e in extensions])
+
         if self.channels == 3:
+            assert has_extension([".png", ".jpg"])
             image = cv2.cvtColor(cv2.imread(str(path), cv2.IMREAD_COLOR),
                                  cv2.COLOR_BGR2RGB)
         elif self.channels == 1:
+            assert has_extension([".png", ".jpg"])
             image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         else:
-            raise ValueError(f"Channels={self.channels} not supported")
+            assert has_extension([".npy"])
+            image = numpy.load(path)
+
         image = Image.fromarray(image)
         # Transform image
         image = self.transform(image)
@@ -70,7 +78,6 @@ def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
         paths=sorted(data_path.glob(f"*{extension}")),
         transform=transform,
         key=key,
-        extension=extension,
         channels=channels,
     )
     dataloader = torch.utils.data.DataLoader(
