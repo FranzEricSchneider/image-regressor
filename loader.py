@@ -14,12 +14,11 @@ from torchvision.datasets import DatasetFolder, folder
 # Inspired by
 # https://towardsdatascience.com/using-shap-to-debug-a-pytorch-image-regression-model-4b562ddef30d
 class ImageDataset(torch.utils.data.Dataset):
-    def __init__(self, paths, transform, key, extension, channels):
+    def __init__(self, paths, transform, key, channels):
 
         self.transform = transform
         self.paths = paths
         self.key = key
-        self.extension = extension
         self.channels = channels
 
     def __getitem__(self, idx):

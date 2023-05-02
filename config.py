@@ -1,14 +1,14 @@
 CONFIG = {
     "data_dir": None,
     "extension": "png",
-    "regression_key": "value",
     "starting_channels": 3,
+    "regression_key": "value",
 
     "wandb": True,
     "wandb_print":
     [
-        "beets",
-        "use_existing",
+        "PW",
+        "scheduler",
     ],
     "keyfile": "/hdd/wandb.json",
     "train": True,
@@ -29,9 +29,9 @@ CONFIG = {
     #            {"name": "checkpoint.pth", "run_path": "diplernerz/hw2p3-ablations/sk5209ak", "replace": True}],
 
     "lr": 5e-2,
-    "scheduler": "constant",
+    "scheduler": "LRTest",
     "StepLR_kwargs": {"step_size": 5, "gamma": 0.2},
-    "LRTest_kwargs": {"min_per_epoch": 5, "runtime_min": 20, "start": 1e-6, "end": 0.5},
+    "LRTest_kwargs": {"min_per_epoch": 2, "runtime_min": 20, "start": 1e-6, "end": 0.5},
     "OneCycleLR_kwargs": {"max_lr": 2.5e-3, "min_lr": 2.5e-6},
     "CosMulti_kwargs": {"epoch_per_cycle": 20, "eta_min": 1.5e-6},
 
@@ -39,17 +39,17 @@ CONFIG = {
     # applied in the loader phase. The way to experiment with augmentations is
     # to make a copy of the file, set those that you want, and then select the
     # files one-by-one as a command-line argument.
-    "train_augmentation_path": "./train_aug_ijrr.json",
-    "test_augmentation_path": "./test_aug_ijrr.json",
+    "train_augmentation_path": "./train_augmentations.json",
+    "test_augmentation_path": "./test_augmentations.json",
 
     # Increase if you can handle it, generally
     # "batch_size": 32,  # MNIST scaled up
-    "batch_size": 24,  # Beets
+    # "batch_size": 24,  # Beets
     # "batch_size": 100,  # Outdoors @ //4,//4
-    # "batch_size": 52,  # Vines @ //4,//4
-    "epochs": 8,  # Beets
+    "batch_size": 52,  # Vines @ //4,//4
+    # "epochs": 8,  # Beets
     # "epochs": 40,  # Outdoors
-    # "epochs": 6,  # Vines
+    "epochs": 15,  # Vines
     "wd": 0.01,
 
     # TODO: Try out all of these models on bigger input pictures
@@ -87,5 +87,5 @@ CONFIG = {
     # How many epochs between validation checks (can take a while)
     "eval_report_iter": 1,
     # How many batches between wandb logs if we are logging batch stats
-    "train_report_iter": 10,
+    "train_report_iter": 1,
 }

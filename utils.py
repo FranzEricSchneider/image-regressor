@@ -72,7 +72,7 @@ def load_config():
 
     # Blindly fill arguments into the config
     for key in config.keys():
-        if hasattr(args, key)
+        if hasattr(args, key):
             value = getattr(args, key)
             if value is not None:
                 config[key] = value

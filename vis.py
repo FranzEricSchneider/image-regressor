@@ -219,12 +219,14 @@ class ScoreCam():
         cam = scale_0_1(cam)
         cam = Image.fromarray(cam).resize(input_size[::-1], Image.ANTIALIAS)
         cam = numpy.uint8(numpy.array(cam) * 255)
-        if input_image[0].shape[0] == 3:
+        if input_image[0].shape[0] != 1:
             cam = cv2.cvtColor(cam, cv2.COLOR_GRAY2RGB)
 
         original = (input_image[0].permute(1, 2, 0)).detach().cpu().numpy()
         if input_image[0].shape[0] == 1:
             original = numpy.squeeze(original)
+        elif input_image[0].shape[0] != 3:
+            original = original[:, :, :3]
         original = numpy.uint8(original * 255)
         if numpy.all(original < 10):
             original *= 25

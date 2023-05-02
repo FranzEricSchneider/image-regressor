@@ -337,7 +337,7 @@ def get_models(config, loader, device, debug=False):
                 summary(model, x.to(device))
                 print("FLATTENED EMBEDDING")
                 for i, element in enumerate(flattener(model.embedding)):
-                    print(f"IDX: {i}\n{element})")
+                    print(f"IDX: {i}\n{element}")
             break
 
     # Save the model size in the config
