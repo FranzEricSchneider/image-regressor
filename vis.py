@@ -46,7 +46,18 @@ def scale_0_1(matrix):
     return (matrix - matrix.min()) / (matrix.max() - matrix.min())
 
 
-def save_debug_images(x, savedir, prefix="debug", labels=None):
+def save_autoencoder_images(x, savedir, images, prefix="debug"):
+
+    timestamp = str(int(time.time() * 1e6))
+
+    for label, tensor in (("original", x), ("decoded", images)):
+        for i, torch_img in enumerate(tensor):
+            name = f"{prefix}_{timestamp}_{i}_{label}.jpg"
+            uint8_image = torch_img_to_array(torch_img)
+            cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
+
+
+def save_debug_images(x, savedir, labels=None, prefix="debug"):
 
     if labels is None:
         labels = [None] * len(x)
@@ -55,10 +66,7 @@ def save_debug_images(x, savedir, prefix="debug", labels=None):
 
     for i, (torch_img, label) in enumerate(zip(x, labels)):
         name = f"{prefix}_{timestamp}_{i}.jpg"
-        float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
-        uint8_image = (float_image * 255).astype(numpy.uint8)
-        if uint8_image.shape[2] == 3:
-            uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+        uint8_image = torch_img_to_array(torch_img)
         if label is not None:
             white = 255
             black = 0
@@ -73,13 +81,17 @@ def save_debug_images(x, savedir, prefix="debug", labels=None):
                         fontScale=1,
                         color=black,
                         thickness=2)
-
-        cv2.imwrite(
-            str(savedir.joinpath(name)),
-            uint8_image,
-        )
+        cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
 
     print(f"Saved images as {savedir.joinpath(prefix)}_{timestamp}_0-{len(x) - 1}.jpg")
+
+
+def torch_img_to_array(torch_img):
+    float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
+    uint8_image = (float_image * 255).astype(numpy.uint8)
+    if uint8_image.shape[2] == 3:
+        uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+    return uint8_image
 
 
 def visually_label_images(imdir, savedir, run_path, augmentation, extension,
@@ -113,9 +125,13 @@ def visually_label_images(imdir, savedir, run_path, augmentation, extension,
     count = 0
     for x, _ in loader:
         x = x.to(device)
-        values = model(x).detach().cpu().numpy().flatten()
-        save_debug_images(x, savedir, labels=values)
-        count += len(values)
+        output = model(x)
+        if model.is_autoencoder:
+            save_autoencoder_images(x, savedir, images=output)
+        else:
+            labels = output.detach().cpu().numpy().flatten()
+            save_debug_images(x, savedir, labels=labels)
+        count += len(output)
         if count >= number:
             break
 

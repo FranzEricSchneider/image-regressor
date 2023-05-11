@@ -19,7 +19,7 @@ def connect_wandb(config):
     wandb.login(key=json.load(keyfile.open("r"))["key"])
 
     name = "-".join([
-        f"{key}:{config[key]}" if key in config else key
+        f"{key}:{config[key]}" if (key in config and not isinstance(config[key], dict)) else key
         for key in config["wandb_print"]
     ])
 

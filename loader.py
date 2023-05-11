@@ -14,12 +14,13 @@ from torchvision.datasets import DatasetFolder, folder
 # Inspired by
 # https://towardsdatascience.com/using-shap-to-debug-a-pytorch-image-regression-model-4b562ddef30d
 class ImageDataset(torch.utils.data.Dataset):
-    def __init__(self, paths, transform, key, channels):
+    def __init__(self, paths, transform, key, channels, is_autoencoder=False):
 
         self.transform = transform
         self.paths = paths
         self.key = key
         self.channels = channels
+        self.is_autoencoder = is_autoencoder
 
     def __getitem__(self, idx):
         '''Get image and target value'''
@@ -44,8 +45,13 @@ class ImageDataset(torch.utils.data.Dataset):
         image = Image.fromarray(image)
         # Transform image
         image = self.transform(image)
+
         # Get target
-        target = torch.Tensor(self.get_target(path))
+        if self.is_autoencoder is True:
+            target = image.clone()
+        else:
+            target = torch.Tensor(self.get_target(path))
+
         return image, target
 
     def get_target(self, path):
@@ -58,7 +64,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
 
 def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
-                 channels):
+                 channels, is_autoencoder=False):
 
     augpath = Path(augpath)
     assert augpath.is_file()
@@ -78,6 +84,7 @@ def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
         transform=transform,
         key=key,
         channels=channels,
+        is_autoencoder=is_autoencoder,
     )
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -105,6 +112,7 @@ def get_loaders(config, debug=False):
             key=config["regression_key"],
             extension=config["extension"],
             channels=config["starting_channels"],
+            is_autoencoder=config["is_autoencoder"],
         )
     test_loader = build_loader(
         data_path=config["data_dir"].joinpath("test"),
@@ -114,6 +122,7 @@ def get_loaders(config, debug=False):
         key=config["regression_key"],
         extension=config["extension"],
         channels=config["starting_channels"],
+        is_autoencoder=config["is_autoencoder"],
     )
 
     if debug:

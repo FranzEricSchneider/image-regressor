@@ -156,6 +156,7 @@ def replace_conv2d_if_needed(conv2d, in_channels):
 class Network(nn.Module):
 
     def __init__(self,
+                 is_autoencoder,
                  use_existing,
                  pretrained,
                  frozen_embedding,
@@ -175,15 +176,17 @@ class Network(nn.Module):
                  output_limit):
         super(Network, self).__init__()
 
+        self.is_autoencoder = is_autoencoder
+        self.decoder_pre = None
+        self.decoder_post = None
+        self.classifier = None
+
         if use_existing is not None:
             self.embedding, cnn_outdim = existing_as_embedder(
                 use_existing,
                 starting_channels,
                 pretrained,
             )
-            if frozen_embedding:
-                for param in self.embedding.parameters():
-                    param.requires_grad = False
         else:
             layers = []
             downsampled = 1
@@ -213,6 +216,10 @@ class Network(nn.Module):
                         layers.append(nn.Dropout(p=cnn_dropout))
             self.embedding = nn.Sequential(*layers)
 
+        if frozen_embedding:
+            for param in self.embedding.parameters():
+                param.requires_grad = False
+
         # Pool all features into one across the image
         if pool == "avg":
             self.pool = nn.AdaptiveAvgPool2d((1, 1))
@@ -221,43 +228,83 @@ class Network(nn.Module):
         else:
             raise NotImplementedError(f"Unknown pool {pool}")
 
-        layers = []
-        for i in range(lin_depth):
-            in_features = lin_width
-            out_features = lin_width
-            if i == 0:
-                in_features = cnn_outdim
-            if i == lin_depth - 1:
-                out_features = 1
-            layers.append(nn.Linear(in_features, out_features))
-            if i == lin_depth - 1:
-                # If we have an output limit, squish things with a sigmoid and
-                # scale to 0-limit
-                if output_limit is not None:
-                    assert isinstance(output_limit, (int, float))
-                    layers.append(nn.Sigmoid())
-                    layers.append(nn.Linear(1, 1))
-                    layers[-1].weight.data.fill_(output_limit)
-                    layers[-1].bias.data.fill_(0)
-                    layers[-1].requires_grad = False
-            else:
-                if lin_batchnorm:
-                    layers.append(nn.BatchNorm1d(out_features))
+        if self.is_autoencoder is True:
+            # TODO: If and when we have a need to modify any of these numbers,
+            # make them into class arguments.
+            layers = [
+                nn.Linear(cnn_outdim, 128),
+                nn.ReLU(),
+                nn.Linear(128, 3**2 * 32),
+                nn.ReLU(),
+                nn.Unflatten(dim=1, unflattened_size=(32, 3, 3)),
+            ]
+            channels = [32, 16, 6]
+            for in_c, out_c in zip(channels[:-1], channels[1:]):
+                layers.append(nn.ConvTranspose2d(in_c,
+                                                 out_c,
+                                                 kernel_size=3,
+                                                 stride=2,
+                                                 padding=1,
+                                                 output_padding=1))
+                layers.append(nn.BatchNorm2d(out_c))
                 layers.append(nn.ReLU())
-                if lin_dropout is not None:
-                    layers.append(nn.Dropout(p=lin_dropout))
-        self.classifier = nn.Sequential(*layers)
+            self.decoder_pre = nn.Sequential(*layers)
+            self.decoder_post = nn.Sequential(
+                nn.ConvTranspose2d(channels[-1],
+                                   starting_channels,
+                                   kernel_size=3,
+                                   stride=1,
+                                   padding=1),
+                nn.Sigmoid()
+            )
+        else:
+            layers = []
+            for i in range(lin_depth):
+                in_features = lin_width
+                out_features = lin_width
+                if i == 0:
+                    in_features = cnn_outdim
+                if i == lin_depth - 1:
+                    out_features = 1
+                layers.append(nn.Linear(in_features, out_features))
+                if i == lin_depth - 1:
+                    # If we have an output limit, squish things with a sigmoid
+                    # and scale to 0-limit
+                    if output_limit is not None:
+                        assert isinstance(output_limit, (int, float))
+                        layers.append(nn.Sigmoid())
+                        layers.append(nn.Linear(1, 1))
+                        layers[-1].weight.data.fill_(output_limit)
+                        layers[-1].bias.data.fill_(0)
+                        layers[-1].requires_grad = False
+                else:
+                    if lin_batchnorm:
+                        layers.append(nn.BatchNorm1d(out_features))
+                    layers.append(nn.ReLU())
+                    if lin_dropout is not None:
+                        layers.append(nn.Dropout(p=lin_dropout))
+            self.classifier = nn.Sequential(*layers)
 
     def forward(self, x):
+        original_shape = x.shape
         x = self.embedding(x)
         x = self.pool(x)
         x = torch.squeeze(x, dim=(2, 3))
-        x = self.classifier(x)
+        if self.is_autoencoder is True:
+            x = self.decoder_pre(x)
+            x = nn.functional.interpolate(x,
+                                          size=original_shape[-2:],
+                                          mode="bilinear",
+                                          align_corners=False)
+            x = self.decoder_post(x)
+        else:
+            x = self.classifier(x)
         return x
 
 
 def network_kwargs(config):
     return {
+        "is_autoencoder": config["is_autoencoder"],
         "use_existing": config["use_existing"],
         "pretrained": config["pretrained"],
         "frozen_embedding": config["frozen_embedding"],
@@ -297,6 +344,30 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def model_from_pth(settings, device):
+
+    # if isinstance(settings, str):
+    #     load_file = settings
+    #     kwargs = network_kwargs(config)
+    if isinstance(settings, dict):
+        path = wandb.restore(**settings)
+        load_file = f"{settings['run_path'].replace('/', '_')}.pth"
+        os.rename(path.name, load_file)
+        kwargs = network_kwargs(load_wandb_config(settings["run_path"]))
+    else:
+        raise NotImplementedError(f"Unknown setting type: {type(settings)}")
+
+    model = Network(**kwargs).to(device)
+    model.load_state_dict(
+        torch.load(
+            load_file,
+            map_location=torch.device(device)
+        )["model_state_dict"]
+    )
+
+    return model
+
+
 # TODO: This is set up for use in TRAINING, can it be simplified for execution
 # and inference?
 def get_models(config, loader, device, debug=False):
@@ -304,30 +375,17 @@ def get_models(config, loader, device, debug=False):
     torch.cuda.empty_cache()
 
     if len(config["models"]) == 0:
-        models = [
-            Network(**network_kwargs(config)).to(device)
-        ]
+        models = [Network(**network_kwargs(config)).to(device)]
     else:
-        models = []
-        for settings in config["models"]:
-            if isinstance(settings, str):
-                load_file = settings
-                kwargs = network_kwargs(config)
-            elif isinstance(settings, dict):
-                wandb.restore(**settings)
-                load_file = f"{settings['run_path'].replace('/', '_')}.pth"
-                os.rename(settings["name"], load_file)
-                kwargs = network_kwargs(load_wandb_config(settings["run_path"]))
-            else:
-                raise NotImplementedError(f"Unknown setting type for {config['models']}")
-            model = Network(**kwargs).to(device)
-            model.load_state_dict(
-                torch.load(
-                    load_file,
-                    map_location=torch.device(device)
-                )["model_state_dict"]
-            )
-            models.append(model)
+        models = [model_from_pth(settings, device)
+                  for settings in config["models"]]
+
+    # If we have been given a pre-trained embedding (for example from auto
+    # encoding), transfer the weights from that model
+    if config["pretrained_embedding"] is not None:
+        pretrained = model_from_pth(config["pretrained_embedding"], device)
+        for model in models:
+            model.embedding.load_state_dict(pretrained.embedding.state_dict())
 
     if debug:
         for x, y in loader:

@@ -36,7 +36,7 @@ def main():
     train_loader, test_loader = get_loaders(config, debug=True)
     run = connect_wandb(config) if config["wandb"] else None
     models = get_models(config, test_loader, device, debug=True)
-    if config["wandb"]:
+    if config["wandb"] and not config["is_autoencoder"]:
         vis_model(models, config, (test_loader,), device, prefixes=("load-test",))
 
     if config["train"]:

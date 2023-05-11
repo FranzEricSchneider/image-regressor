@@ -3,12 +3,15 @@ CONFIG = {
     "extension": "png",
     "starting_channels": 3,
     "regression_key": "value",
+    "is_autoencoder": False,
 
     "wandb": True,
     "wandb_print":
     [
         "PW",
-        "scheduler",
+        "is_autoencoder",
+        "pretrained_embedding",
+        "frozen_embedding",
     ],
     "keyfile": "/hdd/wandb.json",
     "train": True,
@@ -21,15 +24,19 @@ CONFIG = {
 
     "models": [],
     # "models": ["checkpoint.pth"],
-    # "models": [{"name": "checkpoint.pth", "run_path": "diplernerz/hw3p2-ablations/3q34k58v", "replace": True}],
-    # "models": [{"name": "checkpoint.pth", "run_path": "diplernerz/hw3p2-ablations/fqsx3zdk", "replace": True},
-    #            {"name": "checkpoint.pth", "run_path": "diplernerz/hw3p2-ablations/37z196qx", "replace": True},
-    #            {"name": "checkpoint.pth", "run_path": "diplernerz/hw3p2-ablations/phan45yu", "replace": True}],
+    # "models": [{"name": "checkpoint.pth", "run_path": "image-regression/3q34k58v", "replace": True}],
+    # "models": [{"name": "checkpoint.pth", "run_path": "image-regression/fqsx3zdk", "replace": True},
+    #            {"name": "checkpoint.pth", "run_path": "image-regression/37z196qx", "replace": True},
+    #            {"name": "checkpoint.pth", "run_path": "image-regression/phan45yu", "replace": True}],
     # "models": ["checkpoint.pth",
-    #            {"name": "checkpoint.pth", "run_path": "diplernerz/hw2p3-ablations/sk5209ak", "replace": True}],
+    #            {"name": "checkpoint.pth", "run_path": "image-regression/sk5209ak", "replace": True}],
 
-    "lr": 5e-2,
-    "scheduler": "LRTest",
+    # "pretrained_embedding": None,
+    "pretrained_embedding": {"name": "checkpoint.pth", "run_path": "image-regression/8o91vqqo", "replace": True},
+    "frozen_embedding": False,
+
+    "lr": 5e-3,
+    "scheduler": "constant",
     "StepLR_kwargs": {"step_size": 5, "gamma": 0.2},
     "LRTest_kwargs": {"min_per_epoch": 2, "runtime_min": 20, "start": 1e-6, "end": 0.5},
     "OneCycleLR_kwargs": {"max_lr": 2.5e-3, "min_lr": 2.5e-6},
@@ -43,6 +50,7 @@ CONFIG = {
     "test_augmentation_path": "./test_augmentations.json",
 
     # Increase if you can handle it, generally
+    # "batch_size": 500,  # MNIST original size, regressor
     # "batch_size": 32,  # MNIST scaled up
     # "batch_size": 24,  # Beets
     # "batch_size": 100,  # Outdoors @ //4,//4
@@ -64,7 +72,6 @@ CONFIG = {
     # efficientnet_v2_s, efficientnet_v2_m, efficientnet_v2_l
     "use_existing": None,
     "pretrained": True,
-    "frozen_embedding": False,
 
     # Used only when not using an existing encoder
     "cnn_depth": 3,

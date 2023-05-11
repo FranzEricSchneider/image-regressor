@@ -209,11 +209,12 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
             )
             if config["wandb"]:
                 wandb.save("checkpoint.pth")
-                vis_model([model],
-                          config,
-                          (val_loader, train_loader),
-                          device,
-                          prefixes=("train-val", "train-train"))
+                if not config["is_autoencoder"]:
+                    vis_model([model],
+                              config,
+                              (val_loader, train_loader),
+                              device,
+                              prefixes=("train-val", "train-train"))
             best_val_loss = val_loss
 
     if run is not None:
