@@ -26,7 +26,7 @@ import torch
 from loader import get_loaders
 from model import get_models
 from train import run_train
-from utils import (connect_wandb, load_config, system_check)
+from utils import (load_config, login_wandb, system_check, wandb_run)
 from vis import vis_model
 
 
@@ -35,9 +35,15 @@ def main():
     config = load_config()
     train_loader, test_loader = get_loaders(config, debug=True)
     run = connect_wandb(config) if config["wandb"] else None
+    # Login before getting models so we can modify the config
+    if config["wandb"]:
+        login_wandb(config)
     models = get_models(config, test_loader, device, debug=True)
     if config["wandb"] and not config["is_autoencoder"]:
+        run = connect_wandb(config)
         vis_model(models, config, (test_loader,), device, prefixes=("load-test",))
+    else:
+        run = None
 
     if config["train"]:
         assert len(models) == 1

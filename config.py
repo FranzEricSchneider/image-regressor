@@ -31,6 +31,10 @@ CONFIG = {
     # "models": ["checkpoint.pth",
     #            {"name": "checkpoint.pth", "run_path": "image-regression/sk5209ak", "replace": True}],
 
+    # If we define a model using a path to a .pth file, this needs to be a list
+    # to the corresponding wandb config.yaml file
+    "config_paths": None,
+
     # "pretrained_embedding": None,
     "pretrained_embedding": {"name": "checkpoint.pth", "run_path": "image-regression/8o91vqqo", "replace": True},
     "frozen_embedding": False,

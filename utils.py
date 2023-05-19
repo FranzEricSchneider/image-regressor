@@ -11,12 +11,15 @@ import wandb
 from config import CONFIG
 
 
-def connect_wandb(config):
+def login_wandb(config):
 
     keyfile = Path(config["keyfile"])
     assert keyfile.is_file(), \
            f"Need to populate {keyfile} with json containing wandb key"
     wandb.login(key=json.load(keyfile.open("r"))["key"])
+
+
+def wandb_run(config):
 
     name = "-".join([
         f"{key}:{config[key]}" if (key in config and not isinstance(config[key], dict)) else key
@@ -97,7 +100,9 @@ def system_check():
     print("=" * 80)
 
     # Check GPU
-    subprocess.call(["nvidia-smi"])
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        subprocess.call(["nvidia-smi"])
 
     # Check RAM
     ram_gb = virtual_memory().total / 1e9
@@ -111,7 +116,6 @@ def system_check():
     num_cpus = multiprocessing.cpu_count()
     print("Number of CPUs:", num_cpus)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     print("DEVICE", device)
 
     print("=" * 80)
