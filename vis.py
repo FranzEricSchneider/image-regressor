@@ -104,7 +104,16 @@ def torch_img_to_array(torch_img):
 
 
 def visually_label_images(
-    imdir, savedir, run_path, wandb_paths, augmentation, extension, number, key, shuffle, keyfile
+    imdir,
+    savedir,
+    run_path,
+    wandb_paths,
+    augmentation,
+    extension,
+    number,
+    key,
+    shuffle,
+    keyfile,
 ):
 
     # Needed before we can restore the models

@@ -4,15 +4,8 @@ CONFIG = {
     "starting_channels": 3,
     "regression_key": "value",
     "is_autoencoder": False,
-
     "wandb": True,
-    "wandb_print":
-    [
-        "PW",
-        "is_autoencoder",
-        "pretrained_embedding",
-        "frozen_embedding",
-    ],
+    "wandb_print": ["PW", "is_autoencoder", "pretrained_embedding", "frozen_embedding"],
     "keyfile": "/hdd/wandb.json",
     "train": True,
     # Option to log images during training to the /tmp/ dir for visualization.
@@ -21,7 +14,6 @@ CONFIG = {
     "num_vis_images": 1,
     # Choose between "all" or a list of layer indices
     "idx_vis_layers": [3],
-
     "models": [],
     # "models": ["checkpoint.pth"],
     # "models": [{"name": "checkpoint.pth", "run_path": "image-regression/3q34k58v", "replace": True}],
@@ -30,29 +22,28 @@ CONFIG = {
     #            {"name": "checkpoint.pth", "run_path": "image-regression/phan45yu", "replace": True}],
     # "models": ["checkpoint.pth",
     #            {"name": "checkpoint.pth", "run_path": "image-regression/sk5209ak", "replace": True}],
-
     # If we define a model using a path to a .pth file, this needs to be a list
     # to the corresponding wandb config.yaml file
     "config_paths": None,
-
     # "pretrained_embedding": None,
-    "pretrained_embedding": {"name": "checkpoint.pth", "run_path": "image-regression/8o91vqqo", "replace": True},
+    "pretrained_embedding": {
+        "name": "checkpoint.pth",
+        "run_path": "image-regression/8o91vqqo",
+        "replace": True,
+    },
     "frozen_embedding": False,
-
     "lr": 5e-3,
     "scheduler": "constant",
     "StepLR_kwargs": {"step_size": 5, "gamma": 0.2},
     "LRTest_kwargs": {"min_per_epoch": 2, "runtime_min": 20, "start": 1e-6, "end": 0.5},
     "OneCycleLR_kwargs": {"max_lr": 2.5e-3, "min_lr": 2.5e-6},
     "CosMulti_kwargs": {"epoch_per_cycle": 20, "eta_min": 1.5e-6},
-
     # Augmentations are stored in a json file as (name, kwargs). They are
     # applied in the loader phase. The way to experiment with augmentations is
     # to make a copy of the file, set those that you want, and then select the
     # files one-by-one as a command-line argument.
     "train_augmentation_path": "./train_augmentations.json",
     "test_augmentation_path": "./test_augmentations.json",
-
     # Increase if you can handle it, generally
     # "batch_size": 500,  # MNIST original size, regressor
     # "batch_size": 32,  # MNIST scaled up
@@ -63,7 +54,6 @@ CONFIG = {
     # "epochs": 40,  # Outdoors
     "epochs": 15,  # Vines
     "wd": 0.01,
-
     # TODO: Try out all of these models on bigger input pictures
     # None
     # resnet18, resnet34, resnet50, resnet101, resnet152,
@@ -76,7 +66,6 @@ CONFIG = {
     # efficientnet_v2_s, efficientnet_v2_m, efficientnet_v2_l
     "use_existing": None,
     "pretrained": True,
-
     # Used only when not using an existing encoder
     "cnn_depth": 3,
     "cnn_kernel": 3,
@@ -85,7 +74,7 @@ CONFIG = {
     "cnn_downsample": 4,
     "cnn_batchnorm": True,
     "cnn_dropout": None,
-    "pool": "max", # "avg",
+    "pool": "max",  # "avg",
     "lin_depth": 3,
     "lin_width": 256,
     "lin_batchnorm": True,
@@ -94,7 +83,6 @@ CONFIG = {
     # final values with a sigmoid and scale it so it's from 0-limit. If we want
     # to set the lower limit in the future we can expand this.
     "output_limit": None,
-
     # How many epochs between validation checks (can take a while)
     "eval_report_iter": 1,
     # How many batches between wandb logs if we are logging batch stats

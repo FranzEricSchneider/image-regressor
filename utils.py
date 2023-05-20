@@ -14,17 +14,22 @@ from image_regressor.config import CONFIG
 def login_wandb(config):
 
     keyfile = Path(config["keyfile"])
-    assert keyfile.is_file(), \
-           f"Need to populate {keyfile} with json containing wandb key"
+    assert (
+        keyfile.is_file()
+    ), f"Need to populate {keyfile} with json containing wandb key"
     wandb.login(key=json.load(keyfile.open("r"))["key"])
 
 
 def wandb_run(config):
 
-    name = "-".join([
-        f"{key}:{config[key]}" if (key in config and not isinstance(config[key], dict)) else key
-        for key in config["wandb_print"]
-    ])
+    name = "-".join(
+        [
+            f"{key}:{config[key]}"
+            if (key in config and not isinstance(config[key], dict))
+            else key
+            for key in config["wandb_print"]
+        ]
+    )
 
     run = wandb.init(
         # Wandb creates random run names if you skip this field
@@ -46,9 +51,9 @@ def load_config():
     config = copy.copy(CONFIG)
 
     parser = argparse.ArgumentParser(description="Set config via command line")
-    parser.add_argument("data_dir",
-                        type=Path,
-                        help="Path to dir with all images and labels")
+    parser.add_argument(
+        "data_dir", type=Path, help="Path to dir with all images and labels"
+    )
     parser.add_argument("--wandb-print", nargs="+", default=None)
     parser.add_argument("-b", "--batch-size", type=int, default=None)
     parser.add_argument("-e", "--epochs", type=int, default=None)

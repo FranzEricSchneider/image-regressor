@@ -374,9 +374,7 @@ def model_from_pth(settings, device, config_path=None):
 
     model = Network(**kwargs).to(device)
     model.load_state_dict(
-        torch.load(load_file, map_location=torch.device(device))[
-            "model_state_dict"
-        ]
+        torch.load(load_file, map_location=torch.device(device))["model_state_dict"]
     )
 
     return model
