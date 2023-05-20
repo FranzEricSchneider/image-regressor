@@ -16,9 +16,9 @@ from torch import nn
 import torch.nn.functional as F
 import wandb
 
-from loader import build_loader
-from model import flattener, get_models
-from utils import login_wandb, system_check
+from image_regressor.loader import build_loader
+from image_regressor.model import flattener, get_models
+from image_regressor.utils import login_wandb, system_check
 
 
 def vis_model(models, config, loaders, device, prefixes):
@@ -355,8 +355,7 @@ if __name__ == "__main__":
     group.add_argument(
         "-c",
         "--config-paths",
-        help="Path to (.pth, .yaml) for the (model, config) files (space"
-             " separated)",
+        help="Path to (.pth, .yaml) for the (model, config) files (space separated)",
         nargs="+",
         type=Path,
     )

@@ -8,7 +8,7 @@ import subprocess
 import torch
 import wandb
 
-from config import CONFIG
+from image_regressor.config import CONFIG
 
 
 def login_wandb(config):

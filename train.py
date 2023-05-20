@@ -9,8 +9,8 @@ import torch
 from torch import nn
 import wandb
 
-from scheduler import get_scheduler
-from vis import save_debug_images, vis_model
+from image_regressor.scheduler import get_scheduler
+from image_regressor.vis import save_debug_images, vis_model
 
 
 numpy.set_printoptions(suppress=True, precision=3)

@@ -23,11 +23,11 @@ import torch
 # import torchvision
 # import wandb
 
-from loader import get_loaders
-from model import get_models
-from train import run_train
-from utils import (load_config, login_wandb, system_check, wandb_run)
-from vis import vis_model
+from image_regressor.loader import get_loaders
+from image_regressor.model import get_models
+from image_regressor.train import run_train
+from image_regressor.utils import (load_config, login_wandb, system_check, wandb_run)
+from image_regressor.vis import vis_model
 
 
 def main():
