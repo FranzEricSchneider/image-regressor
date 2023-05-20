@@ -63,12 +63,9 @@ class ImageDataset(torch.utils.data.Dataset):
         return len(self.paths)
 
 
-def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
-                 channels, is_autoencoder=False):
-
-    augpath = Path(augpath)
+def build_transform(augpath):
     assert augpath.is_file()
-    transform = transforms.Compose([
+    return transforms.Compose([
         (
             # First looks for functions in torchvision
             getattr(transforms, name)(**kwargs)
@@ -78,6 +75,12 @@ def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
         )
         for name, kwargs in json.load(augpath.open("r"))
     ])
+
+
+def build_loader(data_path, batch_size, augpath, shuffle, key, extension,
+                 channels, is_autoencoder=False):
+
+    transform = build_transform(Path(augpath))
 
     dataset = ImageDataset(
         paths=sorted(data_path.glob(f"*{extension}")),
