@@ -21,6 +21,10 @@ from image_regressor.model import flattener, get_models
 from image_regressor.utils import login_wandb, system_check
 
 
+def read_rgb(impath):
+    return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
+
+
 def vis_model(models, config, loaders, device, prefixes):
 
     impaths = []
@@ -64,16 +68,21 @@ def save_autoencoder_images(x, savedir, images, prefix="debug"):
             cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
 
 
-def save_debug_images(x, savedir, labels=None, prefix="debug"):
+def save_debug_images(x, savedir, labels=None, prefix="debug", from_torch=True):
 
     if labels is None:
         labels = [None] * len(x)
 
     timestamp = str(int(time.time() * 1e6))
 
-    for i, (torch_img, label) in enumerate(zip(x, labels)):
+    for i, (image, label) in enumerate(zip(x, labels)):
+
+        if from_torch:
+            uint8_image = torch_img_to_array(image)
+        else:
+            uint8_image = image
+
         name = f"{prefix}_{timestamp}_{i}.jpg"
-        uint8_image = torch_img_to_array(torch_img)
         if label is not None:
             white = 255
             black = 0
@@ -306,6 +315,13 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "-s",
+        "--source",
+        help="Decide where we want to get our coverage values from",
+        choices=["from_file", "from_model"],
+        default="from_model",
+    )
+    parser.add_argument(
         "-i",
         "--image-directory",
         help="Directory with all images we want to examine",
@@ -349,13 +365,13 @@ if __name__ == "__main__":
         default="value",
     )
     parser.add_argument(
-        "-s",
+        "-S",
         "--shuffle",
         help="Shuffle images in the folder before selecting <number>",
         action="store_true",
     )
 
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "-w",
         "--wandb-run-path",
@@ -372,17 +388,36 @@ if __name__ == "__main__":
     args = parser.parse_args()
     assert args.image_directory.is_dir()
     assert args.output_directory.is_dir()
-    assert args.wandb_keyfile.is_file()
 
-    visually_label_images(
-        imdir=args.image_directory,
-        savedir=args.output_directory,
-        run_path=args.wandb_run_path,
-        wandb_paths=args.config_paths,
-        augmentation=args.augmentation,
-        extension=args.extension,
-        number=args.number,
-        key=args.regression_key,
-        shuffle=args.shuffle,
-        keyfile=args.wandb_keyfile,
-    )
+    if args.source == "from_file":
+        impaths = sorted(args.image_directory.glob(f"*{args.extension}"))
+        images = numpy.array([cv2.imread(str(impath))[::4, ::4] for impath in impaths])
+        labels = numpy.array(
+            [
+                json.load(impath.with_suffix(".json").open("r"))[args.regression_key]
+                for impath in impaths
+            ]
+        )
+        save_debug_images(
+            x=images, savedir=args.output_directory, labels=labels, from_torch=False
+        )
+    elif args.source == "from_model":
+        assert args.wandb_keyfile.is_file()
+        # XOR
+        assert bool(args.wandb_run_path is not None) ^ bool(
+            args.config_paths is not None
+        )
+        visually_label_images(
+            imdir=args.image_directory,
+            savedir=args.output_directory,
+            run_path=args.wandb_run_path,
+            wandb_paths=args.config_paths,
+            augmentation=args.augmentation,
+            extension=args.extension,
+            number=args.number,
+            key=args.regression_key,
+            shuffle=args.shuffle,
+            keyfile=args.wandb_keyfile,
+        )
+    else:
+        raise NotImplementedError(f"Source {args.source} not handled")
