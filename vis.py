@@ -345,7 +345,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--augmentation",
-        help="Image extension WITH period (e.g. '.png')",
+        help="Path to image augmentation json file",
         type=Path,
         default=Path("./test_augmentations.json"),
     )
