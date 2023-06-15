@@ -16,6 +16,44 @@ from vis import save_debug_images, vis_model
 numpy.set_printoptions(suppress=True, precision=3)
 
 
+def value_too_high(values, epoch, max_epoch, scale=4):
+    if epoch < max_epoch // 2:
+        return DEFAULT
+    if values[-1] > (scale * values[0]):
+        return (
+            True,
+            f"Value {values[-1]} was more than {scale}x that of the starting"
+            f" value, {values[0]}"
+        )
+    else:
+        return DEFAULT
+
+
+def too_many_nans(values, epoch, max_epoch, number=2):
+    count = numpy.isnan(values).sum()
+    if count >= number:
+        return True, f"Found {count} NaN values in {values}"
+    else:
+        return DEFAULT
+
+
+def too_much_growth(values, epoch, max_epoch, width=4, eps=0.01):
+    if epoch < max_epoch // 2:
+        return DEFAULT
+    if numpy.all(numpy.diff(values)[-width:] > eps):
+        return True, f"Found {width} consecutive values growing more that {eps}"
+    else:
+        return DEFAULT
+
+
+DEFAULT = (False, None)
+ENDERS = {
+    "too_high": value_too_high,
+    "nans": too_many_nans,
+    "growth": too_much_growth,
+}
+
+
 def get_tools(loader, model, config, num_cpus):
 
     criterion = nn.MSELoss()
@@ -120,7 +158,7 @@ def evaluate(criterion, loader, models, device):
     model = models[0]
     model.eval()
 
-    loss = 0
+    val_loss = 0
     batch_bar = tqdm(total=len(loader),
                      dynamic_ncols=True,
                      leave=False,
@@ -131,9 +169,9 @@ def evaluate(criterion, loader, models, device):
         x, y = x.to(device), y.to(device)
         with torch.inference_mode():
             out = model(x)
-            this_loss = criterion(out, y)
-        loss += this_loss
-        batch_bar.set_postfix(avg_loss=f"{loss/(i+1):.4f}")
+            loss = criterion(out, y)
+        val_loss += float(loss.detach().cpu())
+        batch_bar.set_postfix(avg_loss=f"{val_loss/(i+1):.4f}")
         batch_bar.update()
 
         del x, y, out
@@ -141,10 +179,10 @@ def evaluate(criterion, loader, models, device):
 
     batch_bar.close()
 
-    # Get the average loss across the epoch
-    loss /= len(loader)
+    # Get the average val_loss across the epoch
+    val_loss /= len(loader)
 
-    return loss
+    return val_loss
 
 
 def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
@@ -171,28 +209,37 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
 
     best_val_loss = 1e6
 
+    losses = {"train": [], "val": []}
+
     for epoch in range(config["epochs"]):
         print("Epoch", epoch + 1)
 
         if config["scheduler"] == "StepLR":
             train_loss = train_step(**step_kwargs)
             scheduler.step()
+        elif config["scheduler"] == "ReduceLROnPlateau":
+            train_loss = train_step(**step_kwargs)
         elif config["scheduler"] in ["CosMulti", "OneCycleLR", "constant"]:
             train_loss = train_step(**step_kwargs, scheduler=scheduler)
         elif config["scheduler"] == "LRTest":
             train_loss = train_step(**step_kwargs, scheduler=scheduler, log_loss=True)
         else:
             raise NotImplementedError()
+        losses["train"].append(train_loss)
 
         log_values = {"train_loss": train_loss,
                       "lr": float(optimizer.param_groups[0]["lr"])}
-        if epoch % config["eval_report_iter"] == 0 or epoch == config["epochs"] - 1:
+        if (epoch % config["eval_report_iter"] == 0 or epoch == config["epochs"] - 1 or config["scheduler"] == "ReduceLROnPlateau"):
             val_loss = evaluate(
                 criterion, val_loader, [model], device
             )
             print(f"{str(datetime.datetime.now())}"
                   f"    Validation Loss: {val_loss:.4f}")
             log_values.update({"val_loss": val_loss})
+            losses["val"].append(val_loss)
+            if config["scheduler"] == "ReduceLROnPlateau":
+                scheduler.step(val_loss)
+
         if config["wandb"]:
             wandb.log(log_values)
 
@@ -216,6 +263,21 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
                               device,
                               prefixes=("train-val", "train-train"))
             best_val_loss = val_loss
+
+        # End early in some circumstances
+        end = False
+        for name, kwargs in config.get("end_early", {}).items():
+            end, message = ENDERS[name](losses["val"],
+                                        epoch,
+                                        config["epochs"],
+                                        **kwargs)
+            if end is True:
+                print("*" * 80)
+                print(f"ENDING EARLY\n{message}")
+                print("*" * 80)
+                break
+        if end is True:
+            break
 
     if run is not None:
         run.finish()

@@ -46,14 +46,20 @@ def scale_0_1(matrix):
     return (matrix - matrix.min()) / (matrix.max() - matrix.min())
 
 
-def save_autoencoder_images(x, savedir, images, prefix="debug"):
+def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
 
     timestamp = str(int(time.time() * 1e6))
 
-    for label, tensor in (("original", x), ("decoded", images)):
+    for label, tensor, imloss in (("original", x, None),
+                                  ("decoded", images, loss)):
         for i, torch_img in enumerate(tensor):
             name = f"{prefix}_{timestamp}_{i}_{label}.jpg"
             uint8_image = torch_img_to_array(torch_img)
+            if imloss is not None:
+                imloss = f"{imloss:.2f}"
+                print(f"Loss: {imloss}")
+                highlight_text(uint8_image, imloss)
+                name.replace(".jpg", f"_{imloss}.jpg")
             cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
 
 
@@ -68,22 +74,26 @@ def save_debug_images(x, savedir, labels=None, prefix="debug"):
         name = f"{prefix}_{timestamp}_{i}.jpg"
         uint8_image = torch_img_to_array(torch_img)
         if label is not None:
-            white = 255
-            black = 0
-            if len(uint8_image.shape) == 3 and uint8_image.shape[2] == 3:
-                white = (255, 255, 255)
-                black = (0, 0, 0)
-            uint8_image[:50, :100] = white
-            cv2.putText(img=uint8_image,
-                        text=f"{label:.1f}",
-                        org=(10, 30),
-                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale=1,
-                        color=black,
-                        thickness=2)
+            highlight_text(uint8_image, f"{label:.1f}")
         cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
 
     print(f"Saved images as {savedir.joinpath(prefix)}_{timestamp}_0-{len(x) - 1}.jpg")
+
+
+def highlight_text(image, text):
+    white = 255
+    black = 0
+    if len(image.shape) == 3 and image.shape[2] == 3:
+        white = (255, 255, 255)
+        black = (0, 0, 0)
+    image[:50, :100] = white
+    cv2.putText(img=image,
+                text=text,
+                org=(10, 30),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=1,
+                color=black,
+                thickness=2)
 
 
 def torch_img_to_array(torch_img):
@@ -113,7 +123,7 @@ def visually_label_images(imdir, savedir, run_path, augmentation, extension,
 
     loader = build_loader(
         data_path=imdir,
-        batch_size=2,
+        batch_size=1,
         augpath=augmentation,
         shuffle=shuffle,
         key=key,
@@ -127,7 +137,12 @@ def visually_label_images(imdir, savedir, run_path, augmentation, extension,
         x = x.to(device)
         output = model(x)
         if model.is_autoencoder:
-            save_autoencoder_images(x, savedir, images=output)
+            save_autoencoder_images(
+                x=x,
+                savedir=savedir,
+                images=output,
+                loss=nn.functional.mse_loss(x, output),
+            )
         else:
             labels = output.detach().cpu().numpy().flatten()
             save_debug_images(x, savedir, labels=labels)

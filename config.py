@@ -9,9 +9,10 @@ CONFIG = {
     "wandb_print":
     [
         "PW",
-        "is_autoencoder",
-        "pretrained_embedding",
-        "frozen_embedding",
+        "train_augmentation_path",
+        "use_existing",
+        "lin_depth",
+        "lin_width",
     ],
     "keyfile": "/hdd/wandb.json",
     "train": True,
@@ -31,36 +32,43 @@ CONFIG = {
     # "models": ["checkpoint.pth",
     #            {"name": "checkpoint.pth", "run_path": "image-regression/sk5209ak", "replace": True}],
 
-    # "pretrained_embedding": None,
-    "pretrained_embedding": {"name": "checkpoint.pth", "run_path": "image-regression/8o91vqqo", "replace": True},
+    "pretrained_embedding": None,
+    # "pretrained_embedding": {"name": "checkpoint.pth", "run_path": "image-regression/8o91vqqo", "replace": True},
     "frozen_embedding": False,
 
-    "lr": 5e-3,
+    "lr": 1e-3,  # 1e-2
     "scheduler": "constant",
     "StepLR_kwargs": {"step_size": 5, "gamma": 0.2},
-    "LRTest_kwargs": {"min_per_epoch": 2, "runtime_min": 20, "start": 1e-6, "end": 0.5},
-    "OneCycleLR_kwargs": {"max_lr": 2.5e-3, "min_lr": 2.5e-6},
-    "CosMulti_kwargs": {"epoch_per_cycle": 20, "eta_min": 1.5e-6},
+    "LRTest_kwargs": {"min_per_epoch": 4.5, "runtime_min": 45, "start": 1e-6, "end": 1.0},
+    "OneCycleLR_kwargs": {"max_lr": 1e-2, "min_lr": 6e-6},
+    "CosMulti_kwargs": {"epoch_per_cycle": 5, "eta_min": 6e-6},
+    # mode: min (ideally value goes down) or max (opposite)
+    # factor: scale factor for LR
+    # patience: number of epochs with no improvement after which LR is reduced
+    "ReduceLROnPlateau_kwargs": {"mode": "min", "patience": 2, "factor": 0.5, "min_lr": 6e-6},
 
     # Augmentations are stored in a json file as (name, kwargs). They are
     # applied in the loader phase. The way to experiment with augmentations is
     # to make a copy of the file, set those that you want, and then select the
     # files one-by-one as a command-line argument.
-    "train_augmentation_path": "./train_augmentations.json",
-    "test_augmentation_path": "./test_augmentations.json",
+    "train_augmentation_path": "./train_aug_pwim.json",
+    "test_augmentation_path": "./test_aug_pwim.json",
 
     # Increase if you can handle it, generally
     # "batch_size": 500,  # MNIST original size, regressor
     # "batch_size": 32,  # MNIST scaled up
     # "batch_size": 24,  # Beets
     # "batch_size": 100,  # Outdoors @ //4,//4
-    "batch_size": 52,  # Vines @ //4,//4
+    # "batch_size": 52,  # Vines @ //4,//4  (Hand-made model)
+    # "batch_size": 10,  # Vines @ //4,//4  (Large model safety)
+    "batch_size": 6,  # Backyard @ //4,//4  (Large model safety)
     # "epochs": 8,  # Beets
     # "epochs": 40,  # Outdoors
-    "epochs": 15,  # Vines
+    "epochs": 50,  # Vines
+    # "epochs": 10,  # LRTest
     "wd": 0.01,
+    "end_early": {"too_high": {}, "nans": {}, "growth": {}},
 
-    # TODO: Try out all of these models on bigger input pictures
     # None
     # resnet18, resnet34, resnet50, resnet101, resnet152,
     # vgg11, vgg11_bn, vgg13, vgg13_bn, vgg16, vgg16_bn, vgg19, vgg19_bn
@@ -79,7 +87,7 @@ CONFIG = {
     "cnn_width": 256,
     "cnn_outdim": 128,
     "cnn_downsample": 4,
-    "cnn_batchnorm": True,
+    "cnn_batchnorm": False,
     "cnn_dropout": None,
     "pool": "max", # "avg",
     "lin_depth": 3,

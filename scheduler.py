@@ -32,6 +32,7 @@ def parse_onecycle_kwargs(loader, epochs, max_lr, min_lr):
 
 def parse_cosmulti_kwargs(loader, epoch_per_cycle, eta_min):
     return {
+        # This will be called every batch, hence the T_max=number of batches
         "T_max": epoch_per_cycle * len(loader),
         "eta_min": eta_min,
     }
@@ -62,27 +63,15 @@ def get_scheduler(config, optimizer, loader):
             **config["StepLR_kwargs"],
         )
     elif config["scheduler"] == "CosMulti":
-        # This will be called every batch, hence the T_max=number of batches
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
             **parse_cosmulti_kwargs(loader, **config["CosMulti_kwargs"])
         )
-    # elif config["scheduler"] == "Cos":
-    #     # This will be called every epoch
-    #     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    #         optimizer,
-    #         T_max=config["epochs"],
-    #         eta_min=config["1cycle-minlr"],
-    #     )
-    # elif config["scheduler"] == "ReduceLROnPlateau":
-    #     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #         optimizer,
-    #         mode="max",
-    #         **config["plateau_kwargs"],
-    #         # patience=config["plateau-patience"],
-    #         # factor=config["plateau-scale"],
-    #         # min_lr=config["plateau-min"],
-    #     )
+    elif config["scheduler"] == "ReduceLROnPlateau":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            **config["ReduceLROnPlateau_kwargs"],
+        )
     elif config["scheduler"] == "constant":
         scheduler = None
     else:

@@ -11,6 +11,14 @@ import wandb
 from config import CONFIG
 
 
+def key_string(key):
+    key = str(key)
+    # Shorten the key to produce shorter names
+    if len(key) > 5:
+        key = ("".join([split[0] for split in key.split("_")])).upper()
+    return key
+
+
 def connect_wandb(config):
 
     keyfile = Path(config["keyfile"])
@@ -19,7 +27,7 @@ def connect_wandb(config):
     wandb.login(key=json.load(keyfile.open("r"))["key"])
 
     name = "-".join([
-        f"{key}:{config[key]}" if (key in config and not isinstance(config[key], dict)) else key
+        f"{key_string(key)}:{config[key]}" if (key in config and not isinstance(config[key], dict)) else key
         for key in config["wandb_print"]
     ])
 
