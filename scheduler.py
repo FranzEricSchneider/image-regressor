@@ -2,8 +2,9 @@ import numpy as np
 import torch
 
 
-def parse_lrtest_kwargs(optimizer, loader, min_per_epoch, runtime_min,
-                        start=1e-6, end=1, step_size=50):
+def parse_lrtest_kwargs(
+    optimizer, loader, min_per_epoch, runtime_min, start=1e-6, end=1, step_size=50
+):
     """
     This should work so that StepLR will increase the learning rate from
     start to end LR in runtime_min minutes.
@@ -47,8 +48,10 @@ def get_scheduler(config, optimizer, loader):
     elif config["scheduler"] == "OneCycleLR":
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            **parse_onecycle_kwargs(loader, config["epochs"], **config["OneCycleLR_kwargs"])
-          )
+            **parse_onecycle_kwargs(
+                loader, config["epochs"], **config["OneCycleLR_kwargs"]
+            ),
+        )
     # elif config["scheduler"] == "CyclicLR":
     #     scheduler = torch.optim.lr_scheduler.CyclicLR(
     #         optimizer,
@@ -59,13 +62,11 @@ def get_scheduler(config, optimizer, loader):
     #     )
     elif config["scheduler"] == "StepLR":
         scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer,
-            **config["StepLR_kwargs"],
+            optimizer, **config["StepLR_kwargs"]
         )
     elif config["scheduler"] == "CosMulti":
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            **parse_cosmulti_kwargs(loader, **config["CosMulti_kwargs"])
+            optimizer, **parse_cosmulti_kwargs(loader, **config["CosMulti_kwargs"])
         )
     elif config["scheduler"] == "ReduceLROnPlateau":
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

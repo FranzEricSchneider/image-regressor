@@ -1,8 +1,9 @@
-'''
+"""
 TODO
-'''
+"""
 
 import argparse
+
 # from datetime import datetime
 # import gc
 # import glob
@@ -11,6 +12,7 @@ import argparse
 # import os
 # import pandas as pd
 from pathlib import Path
+
 # import PIL.Image
 # from shutil import rmtree
 # from sklearn.metrics import accuracy_score
@@ -18,16 +20,17 @@ from pathlib import Path
 # from timm.models.layers import DropPath
 # from tqdm import tqdm
 import torch
+
 # from torch import nn
 # from torchsummary import summary
 # import torchvision
 # import wandb
 
-from loader import get_loaders
-from model import get_models
-from train import run_train
-from utils import (connect_wandb, load_config, system_check)
-from vis import vis_model
+from image_regressor.loader import get_loaders
+from image_regressor.model import get_models
+from image_regressor.train import run_train
+from image_regressor.utils import load_config, login_wandb, system_check, wandb_run
+from image_regressor.vis import vis_model
 
 
 def main():
@@ -35,9 +38,15 @@ def main():
     config = load_config()
     train_loader, test_loader = get_loaders(config, debug=True)
     run = connect_wandb(config) if config["wandb"] else None
+    # Login before getting models so we can modify the config
+    if config["wandb"]:
+        login_wandb(config)
     models = get_models(config, test_loader, device, debug=True)
     if config["wandb"] and not config["is_autoencoder"]:
+        run = connect_wandb(config)
         vis_model(models, config, (test_loader,), device, prefixes=("load-test",))
+    else:
+        run = None
 
     if config["train"]:
         assert len(models) == 1

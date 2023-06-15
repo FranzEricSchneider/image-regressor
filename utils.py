@@ -8,7 +8,7 @@ import subprocess
 import torch
 import wandb
 
-from config import CONFIG
+from image_regressor.config import CONFIG
 
 
 def key_string(key):
@@ -19,17 +19,25 @@ def key_string(key):
     return key
 
 
-def connect_wandb(config):
+def login_wandb(config):
 
     keyfile = Path(config["keyfile"])
-    assert keyfile.is_file(), \
-           f"Need to populate {keyfile} with json containing wandb key"
+    assert (
+        keyfile.is_file()
+    ), f"Need to populate {keyfile} with json containing wandb key"
     wandb.login(key=json.load(keyfile.open("r"))["key"])
 
-    name = "-".join([
-        f"{key_string(key)}:{config[key]}" if (key in config and not isinstance(config[key], dict)) else key
-        for key in config["wandb_print"]
-    ])
+
+def wandb_run(config):
+
+    name = "-".join(
+        [
+            f"{key_string(key)}:{config[key]}"
+            if (key in config and not isinstance(config[key], dict))
+            else key
+            for key in config["wandb_print"]
+        ]
+    )
 
     run = wandb.init(
         # Wandb creates random run names if you skip this field
@@ -51,9 +59,9 @@ def load_config():
     config = copy.copy(CONFIG)
 
     parser = argparse.ArgumentParser(description="Set config via command line")
-    parser.add_argument("data_dir",
-                        type=Path,
-                        help="Path to dir with all images and labels")
+    parser.add_argument(
+        "data_dir", type=Path, help="Path to dir with all images and labels"
+    )
     parser.add_argument("--wandb-print", nargs="+", default=None)
     parser.add_argument("-b", "--batch-size", type=int, default=None)
     parser.add_argument("-e", "--epochs", type=int, default=None)
@@ -105,7 +113,9 @@ def system_check():
     print("=" * 80)
 
     # Check GPU
-    subprocess.call(["nvidia-smi"])
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        subprocess.call(["nvidia-smi"])
 
     # Check RAM
     ram_gb = virtual_memory().total / 1e9
@@ -119,7 +129,6 @@ def system_check():
     num_cpus = multiprocessing.cpu_count()
     print("Number of CPUs:", num_cpus)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     print("DEVICE", device)
 
     print("=" * 80)

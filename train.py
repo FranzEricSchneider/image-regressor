@@ -9,8 +9,8 @@ import torch
 from torch import nn
 import wandb
 
-from scheduler import get_scheduler
-from vis import save_debug_images, vis_model
+from image_regressor.scheduler import get_scheduler
+from image_regressor.vis import save_debug_images, vis_model
 
 
 numpy.set_printoptions(suppress=True, precision=3)
@@ -58,10 +58,8 @@ def get_tools(loader, model, config, num_cpus):
 
     criterion = nn.MSELoss()
 
-    optimizer =  torch.optim.AdamW(
-        model.parameters(),
-        lr=config["lr"],
-        weight_decay=config["wd"],
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=config["lr"], weight_decay=config["wd"]
     )
 
     scheduler = get_scheduler(config, optimizer, loader)
@@ -93,15 +91,23 @@ def sanity_check(criterion, loader, model, device):
             break
 
 
-def train_step(loader, model, optimizer, criterion, scaler, config, device,
-               scheduler=None, log_loss=False, log_images=False):
+def train_step(
+    loader,
+    model,
+    optimizer,
+    criterion,
+    scaler,
+    config,
+    device,
+    scheduler=None,
+    log_loss=False,
+    log_images=False,
+):
 
     model.train()
-    batch_bar = tqdm(total=len(loader),
-                     dynamic_ncols=True,
-                     leave=False,
-                     position=0,
-                     desc="Train")
+    batch_bar = tqdm(
+        total=len(loader), dynamic_ncols=True, leave=False, position=0, desc="Train"
+    )
     train_loss = 0
 
     for i, (x, y) in enumerate(loader):
@@ -121,12 +127,13 @@ def train_step(loader, model, optimizer, criterion, scaler, config, device,
             loss = criterion(out, y)
 
         scaler.scale(loss).backward()  # A.k.a. loss.backward()
-        scaler.step(optimizer)         # A.k.a. optimizer.step()
+        scaler.step(optimizer)  # A.k.a. optimizer.step()
         scaler.update()
 
         train_loss += float(loss.detach().cpu())
-        batch_bar.set_postfix(loss=f"{train_loss/(i+1):.4f}",
-                              lr=f"{optimizer.param_groups[0]['lr']}")
+        batch_bar.set_postfix(
+            loss=f"{train_loss/(i+1):.4f}", lr=f"{optimizer.param_groups[0]['lr']}"
+        )
         batch_bar.update()
 
         if log_loss and config["wandb"]:
@@ -144,9 +151,11 @@ def train_step(loader, model, optimizer, criterion, scaler, config, device,
     # Return the average loss over all batches
     train_loss /= len(loader)
 
-    print(f"{str(datetime.datetime.now())}"
-          f"    Avg Train Loss: {train_loss:.4f}"
-          f"    LR: {float(optimizer.param_groups[0]['lr']):.1E}")
+    print(
+        f"{str(datetime.datetime.now())}"
+        f"    Avg Train Loss: {train_loss:.4f}"
+        f"    LR: {float(optimizer.param_groups[0]['lr']):.1E}"
+    )
 
     return train_loss
 
@@ -185,25 +194,27 @@ def evaluate(criterion, loader, models, device):
     return val_loss
 
 
-def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
-              debug=False):
+def run_train(
+    train_loader, val_loader, model, config, num_cpus, device, run, debug=False
+):
 
     print(f"Starting training {str(datetime.datetime.now())}")
     torch.cuda.empty_cache()
     gc.collect()
 
-    (criterion,
-     optimizer,
-     scheduler,
-     scaler) = get_tools(train_loader, model, config, num_cpus)
-    step_kwargs = {"loader": train_loader,
-                   "model": model,
-                   "optimizer": optimizer,
-                   "criterion": criterion,
-                   "scaler": scaler,
-                   "config": config,
-                   "device": device,
-                   "log_images": config["log_images"]}
+    (criterion, optimizer, scheduler, scaler) = get_tools(
+        train_loader, model, config, num_cpus
+    )
+    step_kwargs = {
+        "loader": train_loader,
+        "model": model,
+        "optimizer": optimizer,
+        "criterion": criterion,
+        "scaler": scaler,
+        "config": config,
+        "device": device,
+        "log_images": config["log_images"],
+    }
     if debug:
         sanity_check(criterion, train_loader, model, device)
 
@@ -230,11 +241,10 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
         log_values = {"train_loss": train_loss,
                       "lr": float(optimizer.param_groups[0]["lr"])}
         if (epoch % config["eval_report_iter"] == 0 or epoch == config["epochs"] - 1 or config["scheduler"] == "ReduceLROnPlateau"):
-            val_loss = evaluate(
-                criterion, val_loader, [model], device
+            val_loss = evaluate(criterion, val_loader, [model], device)
+            print(
+                f"{str(datetime.datetime.now())}" f"    Validation Loss: {val_loss:.4f}"
             )
-            print(f"{str(datetime.datetime.now())}"
-                  f"    Validation Loss: {val_loss:.4f}")
             log_values.update({"val_loss": val_loss})
             losses["val"].append(val_loss)
             if config["scheduler"] == "ReduceLROnPlateau":
@@ -257,11 +267,13 @@ def run_train(train_loader, val_loader, model, config, num_cpus, device, run,
             if config["wandb"]:
                 wandb.save("checkpoint.pth")
                 if not config["is_autoencoder"]:
-                    vis_model([model],
-                              config,
-                              (val_loader, train_loader),
-                              device,
-                              prefixes=("train-val", "train-train"))
+                    vis_model(
+                        [model],
+                        config,
+                        (val_loader, train_loader),
+                        device,
+                        prefixes=("train-val", "train-train"),
+                    )
             best_val_loss = val_loss
 
         # End early in some circumstances

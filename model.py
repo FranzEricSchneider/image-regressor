@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import torch
 from torch import nn
 import torchvision
@@ -127,10 +128,10 @@ def existing_as_embedder(name, in_channels, pretrained):
 
 
 def replace_conv2d_if_needed(conv2d, in_channels):
-    '''
+    """
     Replaces a Conv2d layer with a similar layer but with the right number of
     input channels.
-    '''
+    """
     assert isinstance(conv2d, nn.Conv2d)
     if conv2d.in_channels != in_channels:
         if isinstance(conv2d.bias, bool):
@@ -154,26 +155,27 @@ def replace_conv2d_if_needed(conv2d, in_channels):
 
 
 class Network(nn.Module):
-
-    def __init__(self,
-                 is_autoencoder,
-                 use_existing,
-                 pretrained,
-                 frozen_embedding,
-                 starting_channels,
-                 cnn_depth,
-                 cnn_kernel,
-                 cnn_width,
-                 cnn_outdim,
-                 cnn_downsample,
-                 cnn_batchnorm,
-                 cnn_dropout,
-                 pool,
-                 lin_depth,
-                 lin_width,
-                 lin_batchnorm,
-                 lin_dropout,
-                 output_limit):
+    def __init__(
+        self,
+        is_autoencoder,
+        use_existing,
+        pretrained,
+        frozen_embedding,
+        starting_channels,
+        cnn_depth,
+        cnn_kernel,
+        cnn_width,
+        cnn_outdim,
+        cnn_downsample,
+        cnn_batchnorm,
+        cnn_dropout,
+        pool,
+        lin_depth,
+        lin_width,
+        lin_batchnorm,
+        lin_dropout,
+        output_limit,
+    ):
         super(Network, self).__init__()
 
         self.is_autoencoder = is_autoencoder
@@ -183,9 +185,7 @@ class Network(nn.Module):
 
         if use_existing is not None:
             self.embedding, cnn_outdim = existing_as_embedder(
-                use_existing,
-                starting_channels,
-                pretrained,
+                use_existing, starting_channels, pretrained
             )
         else:
             layers = []
@@ -204,10 +204,11 @@ class Network(nn.Module):
                     downsampled *= 2
                 else:
                     stride = 1
-                layers.append(nn.Conv2d(in_channels,
-                                        out_channels,
-                                        kernel_size=cnn_kernel,
-                                        stride=stride))
+                layers.append(
+                    nn.Conv2d(
+                        in_channels, out_channels, kernel_size=cnn_kernel, stride=stride
+                    )
+                )
                 if i < cnn_depth - 1:
                     if cnn_batchnorm:
                         layers.append(nn.BatchNorm2d(out_channels))
@@ -234,28 +235,30 @@ class Network(nn.Module):
             layers = [
                 nn.Linear(cnn_outdim, 128),
                 nn.ReLU(),
-                nn.Linear(128, 3**2 * 32),
+                nn.Linear(128, 3 ** 2 * 32),
                 nn.ReLU(),
                 nn.Unflatten(dim=1, unflattened_size=(32, 3, 3)),
             ]
             channels = [32, 16, 6]
             for in_c, out_c in zip(channels[:-1], channels[1:]):
-                layers.append(nn.ConvTranspose2d(in_c,
-                                                 out_c,
-                                                 kernel_size=3,
-                                                 stride=2,
-                                                 padding=1,
-                                                 output_padding=1))
+                layers.append(
+                    nn.ConvTranspose2d(
+                        in_c,
+                        out_c,
+                        kernel_size=3,
+                        stride=2,
+                        padding=1,
+                        output_padding=1,
+                    )
+                )
                 layers.append(nn.BatchNorm2d(out_c))
                 layers.append(nn.ReLU())
             self.decoder_pre = nn.Sequential(*layers)
             self.decoder_post = nn.Sequential(
-                nn.ConvTranspose2d(channels[-1],
-                                   starting_channels,
-                                   kernel_size=3,
-                                   stride=1,
-                                   padding=1),
-                nn.Sigmoid()
+                nn.ConvTranspose2d(
+                    channels[-1], starting_channels, kernel_size=3, stride=1, padding=1
+                ),
+                nn.Sigmoid(),
             )
         else:
             layers = []
@@ -289,13 +292,14 @@ class Network(nn.Module):
         original_shape = x.shape
         x = self.embedding(x)
         x = self.pool(x)
-        x = torch.squeeze(x, dim=(2, 3))
+        # To make this pytorch 1.13 compatible, squeeze each dim separately. In
+        # 2.0 you can pass in a tuple
+        x = torch.squeeze(torch.squeeze(x, dim=3), dim=2)
         if self.is_autoencoder is True:
             x = self.decoder_pre(x)
-            x = nn.functional.interpolate(x,
-                                          size=original_shape[-2:],
-                                          mode="bilinear",
-                                          align_corners=False)
+            x = nn.functional.interpolate(
+                x, size=original_shape[-2:], mode="bilinear", align_corners=False
+            )
             x = self.decoder_post(x)
         else:
             x = self.classifier(x)
@@ -325,13 +329,17 @@ def network_kwargs(config):
     }
 
 
-def load_wandb_config(run_path):
+def load_wandb_config(run_path=None, new_file=None, config_path=None):
     """
     The wandb config splits config values into desc (description) and value
     (the stuff we want). Undo that.
     """
-    wandb.restore(name="config.yaml", run_path=run_path, replace=True)
-    wandb_dict = yaml.safe_load(open("config.yaml", "r"))
+    if config_path is None:
+        path = wandb.restore(name="config.yaml", run_path=run_path, replace=True)
+        path = Path(path.name)
+        os.rename(path.name, new_file.name)
+        config_path = new_file
+    wandb_dict = yaml.safe_load(config_path.open("r"))
     loaded_config = {}
     for key, value in wandb_dict.items():
         if isinstance(value, dict) and "value" in value:
@@ -344,25 +352,29 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def model_from_pth(settings, device):
+def model_from_pth(settings, device, config_path=None):
 
-    # if isinstance(settings, str):
-    #     load_file = settings
-    #     kwargs = network_kwargs(config)
-    if isinstance(settings, dict):
+    if isinstance(settings, Path):
+        load_file = settings
+        kwargs = kwargs = network_kwargs(load_wandb_config(config_path=config_path))
+    elif isinstance(settings, dict):
         path = wandb.restore(**settings)
-        load_file = f"{settings['run_path'].replace('/', '_')}.pth"
-        os.rename(path.name, load_file)
-        kwargs = network_kwargs(load_wandb_config(settings["run_path"]))
+        path = Path(path.name)
+        load_file = path.parent.joinpath(
+            f"{settings['run_path'].replace('/', '_')}.pth"
+        )
+        os.rename(path.name, load_file.name)
+        kwargs = network_kwargs(
+            load_wandb_config(
+                run_path=settings["run_path"], new_file=load_file.with_suffix(".yaml")
+            )
+        )
     else:
         raise NotImplementedError(f"Unknown setting type: {type(settings)}")
 
     model = Network(**kwargs).to(device)
     model.load_state_dict(
-        torch.load(
-            load_file,
-            map_location=torch.device(device)
-        )["model_state_dict"]
+        torch.load(load_file, map_location=torch.device(device))["model_state_dict"]
     )
 
     return model
@@ -377,8 +389,13 @@ def get_models(config, loader, device, debug=False):
     if len(config["models"]) == 0:
         models = [Network(**network_kwargs(config)).to(device)]
     else:
-        models = [model_from_pth(settings, device)
-                  for settings in config["models"]]
+        if config["config_paths"] is None:
+            models = [model_from_pth(settings, device) for settings in config["models"]]
+        else:
+            models = [
+                model_from_pth(settings, device, path)
+                for settings, path in zip(config["models"], config["config_paths"])
+            ]
 
     # If we have been given a pre-trained embedding (for example from auto
     # encoding), transfer the weights from that model
@@ -400,9 +417,7 @@ def get_models(config, loader, device, debug=False):
 
     # Save the model size in the config
     config["model_sizes"] = {
-        f"model-{i}": count_parameters(model)
-        for i, model in enumerate(models)
+        f"model-{i}": count_parameters(model) for i, model in enumerate(models)
     }
 
     return models
-

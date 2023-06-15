@@ -1,8 +1,11 @@
 import matplotlib
+
 matplotlib.use("Agg")
 
 import argparse
 import cv2
+from datetime import datetime
+import json
 from matplotlib import pyplot
 import numpy
 from pathlib import Path
@@ -13,9 +16,13 @@ from torch import nn
 import torch.nn.functional as F
 import wandb
 
-from loader import build_loader
-from model import flattener, get_models
-from utils import system_check
+from image_regressor.loader import build_loader
+from image_regressor.model import flattener, get_models
+from image_regressor.utils import login_wandb, system_check
+
+
+def read_rgb(impath):
+    return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
 
 def vis_model(models, config, loaders, device, prefixes):
@@ -32,10 +39,14 @@ def vis_model(models, config, loaders, device, prefixes):
                 for target in indices:
                     cam = ScoreCam(model, target_layer=target)
                     for j in range(config["num_vis_images"]):
-                        save_path = Path(f"/tmp/{prefix}_model{i}_testim{j}_layer{target}.jpg")
-                        cam.generate_cam(input_image=x[j:j+1].to(device),
-                                         target_class=0,
-                                         save_path=save_path)
+                        save_path = Path(
+                            f"/tmp/{prefix}_model{i}_testim{j}_layer{target}.jpg"
+                        )
+                        cam.generate_cam(
+                            input_image=x[j : j + 1].to(device),
+                            target_class=0,
+                            save_path=save_path,
+                        )
                         impaths.append(save_path)
                 break
 
@@ -63,16 +74,21 @@ def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
             cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
 
 
-def save_debug_images(x, savedir, labels=None, prefix="debug"):
+def save_debug_images(x, savedir, labels=None, prefix="debug", from_torch=True):
 
     if labels is None:
         labels = [None] * len(x)
 
     timestamp = str(int(time.time() * 1e6))
 
-    for i, (torch_img, label) in enumerate(zip(x, labels)):
+    for i, (image, label) in enumerate(zip(x, labels)):
+
+        if from_torch:
+            uint8_image = torch_img_to_array(image)
+        else:
+            uint8_image = image
+
         name = f"{prefix}_{timestamp}_{i}.jpg"
-        uint8_image = torch_img_to_array(torch_img)
         if label is not None:
             highlight_text(uint8_image, f"{label:.1f}")
         cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
@@ -104,14 +120,40 @@ def torch_img_to_array(torch_img):
     return uint8_image
 
 
-def visually_label_images(imdir, savedir, run_path, augmentation, extension,
-                          number, key, shuffle):
+def visually_label_images(
+    imdir,
+    savedir,
+    run_path,
+    wandb_paths,
+    augmentation,
+    extension,
+    number,
+    key,
+    shuffle,
+    keyfile,
+):
+
+    # Needed before we can restore the models
+    login_wandb({"keyfile": keyfile})
 
     num_cpus, device = system_check()
+    if run_path is not None:
+        models = {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
+        config_paths = None
+    elif wandb_paths is not None:
+        # Should be given as a tuple, where each is a Path() to a .pth or .yaml
+        # file we want to load
+        models, config_path = wandb_paths
+        config_paths = [config_path]
+    else:
+        raise ValueError(f"Invalid paths given: {run_path}, {config_paths}")
+
     models = get_models(
-        config={"models": [
-            {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
-        ]},
+        config={
+            "models": [models],
+            "config_paths": config_paths,
+            "pretrained_embedding": None,
+        },
         loader=None,
         device=device,
         debug=False,
@@ -132,6 +174,7 @@ def visually_label_images(imdir, savedir, run_path, augmentation, extension,
         channels=3,
     )
 
+    print(f"Started visualizing at {datetime.now()}")
     count = 0
     for x, _ in loader:
         x = x.to(device)
@@ -149,9 +192,10 @@ def visually_label_images(imdir, savedir, run_path, augmentation, extension,
         count += len(output)
         if count >= number:
             break
+    print(f"Finished visualizing {count} images at {datetime.now()}")
 
 
-'''
+"""
 Code adapted for regression from:
 https://github.com/utkuozbulak/pytorch-cnn-visualizations
 
@@ -176,15 +220,18 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
-'''
-class CamExtractor():
-    '''Extracts cam features from the model.'''
+"""
+
+
+class CamExtractor:
+    """Extracts cam features from the model."""
+
     def __init__(self, model, target_layer):
         self.model = model
         self.target_layer = target_layer
 
     def forward_pass_on_convolutions(self, x):
-        '''Does forward pass on convolutions, hooks function at given layer.'''
+        """Does forward pass on convolutions, hooks function at given layer."""
         conv_output = None
         # for module_pos, module in self.model.embedding._modules.items():
         for module_pos, module in enumerate(flattener(self.model.embedding)):
@@ -194,14 +241,15 @@ class CamExtractor():
         return conv_output, x
 
     def forward_pass(self, x):
-        '''Does a full forward pass on the model, returns layer output.'''
+        """Does a full forward pass on the model, returns layer output."""
         # Forward pass on the convolutions
         conv_output, _ = self.forward_pass_on_convolutions(x)
         return conv_output, self.model(x)
 
 
-class ScoreCam():
-    '''Saves class activation map.'''
+class ScoreCam:
+    """Saves class activation map."""
+
     def __init__(self, model, target_layer):
         self.model = model
         self.target_layer = target_layer
@@ -232,19 +280,21 @@ class ScoreCam():
             saliency_map = torch.unsqueeze(torch.unsqueeze(target[i, :, :], 0), 0)
 
             # Upsampling to input size
-            saliency_map = F.interpolate(saliency_map,
-                                         size=input_size,
-                                         mode="bilinear",
-                                         align_corners=False)
+            saliency_map = F.interpolate(
+                saliency_map, size=input_size, mode="bilinear", align_corners=False
+            )
             if saliency_map.max() == saliency_map.min():
                 continue
             norm_saliency_map = scale_0_1(saliency_map)
 
             # Get the target score
-            w = F.softmax(self.extractor.forward_pass(input_image * norm_saliency_map)[1],
-                          dim=1)[0][target_class]
-            cam += w.data.detach().cpu().numpy() * \
-                   target[i, :, :].data.detach().cpu().numpy()
+            w = F.softmax(
+                self.extractor.forward_pass(input_image * norm_saliency_map)[1], dim=1
+            )[0][target_class]
+            cam += (
+                w.data.detach().cpu().numpy()
+                * target[i, :, :].data.detach().cpu().numpy()
+            )
 
         cam = numpy.maximum(cam, 0)
         cam = scale_0_1(cam)
@@ -274,65 +324,113 @@ class ScoreCam():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Label images based on the results of a model for human"
-                    " visualization.",
+        " visualization.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "-i", "--image-directory",
+        "-s",
+        "--source",
+        help="Decide where we want to get our coverage values from",
+        choices=["from_file", "from_model"],
+        default="from_model",
+    )
+    parser.add_argument(
+        "-i",
+        "--image-directory",
         help="Directory with all images we want to examine",
         required=True,
         type=Path,
     )
     parser.add_argument(
-        "-o", "--output-directory",
-        help="Directory with all images we want to examine",
+        "-o",
+        "--output-directory",
+        help="Directory for where to store labeled/visualized images",
         required=True,
         type=Path,
     )
     parser.add_argument(
-        "-w", "--wandb-run-path",
-        help="Wandb recorded run (e.g."
-             " 'diplernerz/hw3p2-ablations/3q34k58v' in config)",
-        required=True,
+        "-k",
+        "--wandb-keyfile",
+        help="Wandb login info in a json dictionary, has the element key",
+        type=Path,
+        default=Path("/home/wandb.json"),
     )
     parser.add_argument(
-        "-a", "--augmentation",
-        help="Image extension WITH period (e.g. '.png')",
+        "-a",
+        "--augmentation",
+        help="Path to image augmentation json file",
         type=Path,
         default=Path("./test_augmentations.json"),
     )
     parser.add_argument(
-        "-e", "--extension",
+        "-e",
+        "--extension",
         help="Image extension WITH period (e.g. '.png')",
         default=".png",
     )
     parser.add_argument(
-        "-n", "--number",
-        help="Number of images to label",
-        type=int,
-        default=10,
+        "-n", "--number", help="Number of images to label", type=int, default=10
     )
     parser.add_argument(
-        "-r", "--regression-key",
+        "-r",
+        "--regression-key",
         help="Value in the json file associated with the measurement",
         default="value",
     )
     parser.add_argument(
-        "-s", "--shuffle",
+        "-S",
+        "--shuffle",
         help="Shuffle images in the folder before selecting <number>",
         action="store_true",
     )
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "-w",
+        "--wandb-run-path",
+        help="Wandb run (e.g. 'image-regression/wnevejfn' in config)",
+    )
+    group.add_argument(
+        "-c",
+        "--config-paths",
+        help="Path to (.pth, .yaml) for the (model, config) files (space separated)",
+        nargs="+",
+        type=Path,
+    )
+
     args = parser.parse_args()
     assert args.image_directory.is_dir()
     assert args.output_directory.is_dir()
 
-    visually_label_images(
-        imdir=args.image_directory,
-        savedir=args.output_directory,
-        run_path=args.wandb_run_path,
-        augmentation=args.augmentation,
-        extension=args.extension,
-        number=args.number,
-        key=args.regression_key,
-        shuffle=args.shuffle,
-    )
+    if args.source == "from_file":
+        impaths = sorted(args.image_directory.glob(f"*{args.extension}"))
+        images = numpy.array([cv2.imread(str(impath))[::4, ::4] for impath in impaths])
+        labels = numpy.array(
+            [
+                json.load(impath.with_suffix(".json").open("r"))[args.regression_key]
+                for impath in impaths
+            ]
+        )
+        save_debug_images(
+            x=images, savedir=args.output_directory, labels=labels, from_torch=False
+        )
+    elif args.source == "from_model":
+        assert args.wandb_keyfile.is_file()
+        # XOR
+        assert bool(args.wandb_run_path is not None) ^ bool(
+            args.config_paths is not None
+        )
+        visually_label_images(
+            imdir=args.image_directory,
+            savedir=args.output_directory,
+            run_path=args.wandb_run_path,
+            wandb_paths=args.config_paths,
+            augmentation=args.augmentation,
+            extension=args.extension,
+            number=args.number,
+            key=args.regression_key,
+            shuffle=args.shuffle,
+            keyfile=args.wandb_keyfile,
+        )
+    else:
+        raise NotImplementedError(f"Source {args.source} not handled")

@@ -4,7 +4,6 @@ CONFIG = {
     "starting_channels": 3,
     "regression_key": "value",
     "is_autoencoder": False,
-
     "wandb": True,
     "wandb_print":
     [
@@ -22,7 +21,6 @@ CONFIG = {
     "num_vis_images": 1,
     # Choose between "all" or a list of layer indices
     "idx_vis_layers": [3],
-
     "models": [],
     # "models": ["checkpoint.pth"],
     # "models": [{"name": "checkpoint.pth", "run_path": "image-regression/3q34k58v", "replace": True}],
@@ -32,6 +30,9 @@ CONFIG = {
     # "models": ["checkpoint.pth",
     #            {"name": "checkpoint.pth", "run_path": "image-regression/sk5209ak", "replace": True}],
 
+    # If we define a model using a path to a .pth file, this needs to be a list
+    # to the corresponding wandb config.yaml file
+    "config_paths": None,
     "pretrained_embedding": None,
     # "pretrained_embedding": {"name": "checkpoint.pth", "run_path": "image-regression/8o91vqqo", "replace": True},
     "frozen_embedding": False,
@@ -51,8 +52,8 @@ CONFIG = {
     # applied in the loader phase. The way to experiment with augmentations is
     # to make a copy of the file, set those that you want, and then select the
     # files one-by-one as a command-line argument.
-    "train_augmentation_path": "./train_aug_pwim.json",
-    "test_augmentation_path": "./test_aug_pwim.json",
+    "train_augmentation_path": "./train_augmentations.json",
+    "test_augmentation_path": "./test_augmentations.json",
 
     # Increase if you can handle it, generally
     # "batch_size": 500,  # MNIST original size, regressor
@@ -80,7 +81,6 @@ CONFIG = {
     # efficientnet_v2_s, efficientnet_v2_m, efficientnet_v2_l
     "use_existing": None,
     "pretrained": True,
-
     # Used only when not using an existing encoder
     "cnn_depth": 3,
     "cnn_kernel": 3,
@@ -89,7 +89,7 @@ CONFIG = {
     "cnn_downsample": 4,
     "cnn_batchnorm": False,
     "cnn_dropout": None,
-    "pool": "max", # "avg",
+    "pool": "max",  # "avg",
     "lin_depth": 3,
     "lin_width": 256,
     "lin_batchnorm": True,
@@ -98,7 +98,6 @@ CONFIG = {
     # final values with a sigmoid and scale it so it's from 0-limit. If we want
     # to set the lower limit in the future we can expand this.
     "output_limit": None,
-
     # How many epochs between validation checks (can take a while)
     "eval_report_iter": 1,
     # How many batches between wandb logs if we are logging batch stats
