@@ -1,6 +1,6 @@
 CONFIG = {
     "data_dir": None,
-    "extension": "png",
+    "extension": "jpg",
     "starting_channels": 3,
     "regression_key": "value",
     "is_autoencoder": False,

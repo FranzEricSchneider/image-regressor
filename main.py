@@ -37,13 +37,12 @@ def main():
     num_cpus, device = system_check()
     config = load_config()
     train_loader, test_loader = get_loaders(config, debug=True)
-    run = connect_wandb(config) if config["wandb"] else None
     # Login before getting models so we can modify the config
     if config["wandb"]:
         login_wandb(config)
     models = get_models(config, test_loader, device, debug=True)
     if config["wandb"] and not config["is_autoencoder"]:
-        run = connect_wandb(config)
+        run = wandb_run(config)
         vis_model(models, config, (test_loader,), device, prefixes=("load-test",))
     else:
         run = None
