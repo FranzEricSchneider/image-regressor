@@ -1,6 +1,8 @@
+import argparse
 from collections import namedtuple
 import cv2
 import gc
+import imageio
 import json
 import numpy
 from pathlib import Path
@@ -14,13 +16,16 @@ from torchvision.datasets import DatasetFolder, folder
 # Inspired by
 # https://towardsdatascience.com/using-shap-to-debug-a-pytorch-image-regression-model-4b562ddef30d
 class ImageDataset(torch.utils.data.Dataset):
-    def __init__(self, paths, transform, key, channels, is_autoencoder=False):
+    def __init__(
+        self, paths, transform, key, channels, is_autoencoder=False, include_path=False
+    ):
 
         self.transform = transform
         self.paths = paths
         self.key = key
         self.channels = channels
         self.is_autoencoder = is_autoencoder
+        self.include_path = include_path
 
     def __getitem__(self, idx):
         """Get image and target value"""
@@ -53,7 +58,10 @@ class ImageDataset(torch.utils.data.Dataset):
         else:
             target = torch.Tensor(self.get_target(path))
 
-        return image, target
+        if self.include_path:
+            return image, target, str(path)
+        else:
+            return image, target
 
     def get_target(self, path):
         name = path.with_suffix(".json").name
@@ -90,6 +98,7 @@ def build_loader(
     extension,
     channels,
     is_autoencoder=False,
+    include_path=False,
 ):
 
     transform = build_transform(Path(augpath))
@@ -100,6 +109,7 @@ def build_loader(
         key=key,
         channels=channels,
         is_autoencoder=is_autoencoder,
+        include_path=include_path,
     )
     dataloader = torch.utils.data.DataLoader(
         dataset, num_workers=0, pin_memory=True, batch_size=batch_size, shuffle=shuffle
@@ -368,3 +378,40 @@ class ShadowBar(object):
         image = image - shade_fill
 
         return torch.clamp(image, 0, 1)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Calculate image stats useful for loading",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "-i",
+        "--image-directory",
+        help="Directory with all images we want to examine",
+        required=True,
+        type=Path,
+    )
+    parser.add_argument(
+        "-e",
+        "--extension",
+        help="Image extension WITH period (e.g. '.png')",
+        default=".jpg",
+    )
+    parser.add_argument(
+        "-n",
+        "--number",
+        help="Number of images to sample (limited by memory constraints)",
+        type=int,
+        default=200,
+    )
+    args = parser.parse_args()
+    assert args.image_directory.is_dir()
+
+    files = args.image_directory.glob(f"*{args.extension}")
+    imgs = [imageio.imread(x) for x, _ in zip(files, range(args.number))]
+    # Tile and scale to 0-1
+    imgs = numpy.concatenate(imgs, axis=0) / 255
+    mean = numpy.mean(imgs, axis=(0, 1))
+    std = numpy.std(imgs, axis=(0, 1))
+    print(f"mean: {mean}, stdev: {std}")

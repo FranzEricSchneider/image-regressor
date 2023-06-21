@@ -14,6 +14,7 @@ import time
 import torch
 from torch import nn
 import torch.nn.functional as F
+from tqdm import tqdm
 import wandb
 
 from image_regressor.loader import build_loader
@@ -61,8 +62,7 @@ def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
 
     timestamp = str(int(time.time() * 1e6))
 
-    for label, tensor, imloss in (("original", x, None),
-                                  ("decoded", images, loss)):
+    for label, tensor, imloss in (("original", x, None), ("decoded", images, loss)):
         for i, torch_img in enumerate(tensor):
             name = f"{prefix}_{timestamp}_{i}_{label}.jpg"
             uint8_image = torch_img_to_array(torch_img)
@@ -74,42 +74,47 @@ def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
             cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
 
 
-def save_debug_images(x, savedir, labels=None, prefix="debug", from_torch=True):
+def save_debug_images(impaths, savedir, labels=None, prefix="debug", from_torch=None, metakeys=None):
 
     if labels is None:
         labels = [None] * len(x)
 
-    timestamp = str(int(time.time() * 1e6))
+    for i, (impath, label) in enumerate(zip(impaths, labels)):
 
-    for i, (image, label) in enumerate(zip(x, labels)):
-
-        if from_torch:
-            uint8_image = torch_img_to_array(image)
+        if from_torch is None:
+            uint8_image = cv2.imread(str(impath))
         else:
-            uint8_image = image
+            uint8_image = torch_img_to_array(from_torch[i])
 
-        name = f"{prefix}_{timestamp}_{i}.jpg"
         if label is not None:
-            highlight_text(uint8_image, f"{label:.1f}")
-        cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
+            highlight_text(uint8_image, f"{label:.2f}")
+        if metakeys is not None:
+            data = json.load(impath.with_suffix(".json").open("r"))
+            for j, key in enumerate(metakeys):
+                highlight_text(uint8_image, f"{data[key]:.2f}", level=1 + j)
 
-    print(f"Saved images as {savedir.joinpath(prefix)}_{timestamp}_0-{len(x) - 1}.jpg")
+        new_path = savedir.joinpath(impath.name)
+        cv2.imwrite(str(new_path), uint8_image)
+        print(f"Saved {new_path}")
 
 
-def highlight_text(image, text):
+def highlight_text(image, text, level=0):
+    vstep = 50
     white = 255
     black = 0
     if len(image.shape) == 3 and image.shape[2] == 3:
         white = (255, 255, 255)
         black = (0, 0, 0)
-    image[:50, :100] = white
-    cv2.putText(img=image,
-                text=text,
-                org=(10, 30),
-                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                fontScale=1,
-                color=black,
-                thickness=2)
+    image[vstep * level : vstep * (level + 1), :100] = white
+    cv2.putText(
+        img=image,
+        text=text,
+        org=(10 + vstep * level, 30),
+        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        fontScale=1,
+        color=black,
+        thickness=2,
+    )
 
 
 def torch_img_to_array(torch_img):
@@ -131,6 +136,7 @@ def visually_label_images(
     key,
     shuffle,
     keyfile,
+    vis_torch_images=False,
 ):
 
     # Needed before we can restore the models
@@ -172,11 +178,13 @@ def visually_label_images(
         extension=extension,
         # TODO: Expand in the future as necessary
         channels=3,
+        include_path=True,
     )
 
     print(f"Started visualizing at {datetime.now()}")
     count = 0
-    for x, _ in loader:
+    for x, _, paths in loader:
+        paths = map(Path, paths)
         x = x.to(device)
         output = model(x)
         if model.is_autoencoder:
@@ -188,7 +196,10 @@ def visually_label_images(
             )
         else:
             labels = output.detach().cpu().numpy().flatten()
-            save_debug_images(x, savedir, labels=labels)
+            if vis_torch_images:
+                save_debug_images(paths, savedir, labels=labels, from_torch=x)
+            else:
+                save_debug_images(paths, savedir, labels=labels)
         count += len(output)
         if count >= number:
             break
@@ -321,6 +332,17 @@ class ScoreCam:
         pyplot.close(figure)
 
 
+def compilation_video(impaths):
+    height, width, _ = cv2.imread(str(impaths[0])).shape
+    size = (width, height)
+    vid_path = impaths[0].parent.joinpath("compilation.mp4")
+    out = cv2.VideoWriter(filename=str(vid_path), fourcc=cv2.VideoWriter_fourcc(*"mp4v"), fps=1, frameSize=size)
+    for impath in tqdm(impaths):
+        out.write(cv2.imread(str(impath)))
+    out.release()
+    return vid_path
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Label images based on the results of a model for human"
@@ -349,27 +371,10 @@ if __name__ == "__main__":
         type=Path,
     )
     parser.add_argument(
-        "-k",
-        "--wandb-keyfile",
-        help="Wandb login info in a json dictionary, has the element key",
-        type=Path,
-        default=Path("/home/wandb.json"),
-    )
-    parser.add_argument(
-        "-a",
-        "--augmentation",
-        help="Path to image augmentation json file",
-        type=Path,
-        default=Path("./test_augmentations.json"),
-    )
-    parser.add_argument(
         "-e",
         "--extension",
         help="Image extension WITH period (e.g. '.png')",
         default=".png",
-    )
-    parser.add_argument(
-        "-n", "--number", help="Number of images to label", type=int, default=10
     )
     parser.add_argument(
         "-r",
@@ -378,9 +383,42 @@ if __name__ == "__main__":
         default="value",
     )
     parser.add_argument(
+        "-v",
+        "--video",
+        help="Whether to turn output images into a compilation video",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-a",
+        "--augmentation",
+        help="[Only used w/ from_model] Path to image augmentation json file",
+        type=Path,
+        default=Path("./test_augmentations.json"),
+    )
+    parser.add_argument(
+        "-k",
+        "--wandb-keyfile",
+        help="[Only used w/ from_model] Wandb login info in json dictionary, has the element key",
+        type=Path,
+        default=Path("/home/wandb.json"),
+    )
+    parser.add_argument(
+        "-n",
+        "--number",
+        help="[Only used w/ from_model] Number of images to process",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
         "-S",
         "--shuffle",
-        help="Shuffle images in the folder before selecting <number>",
+        help="[Only used w/ from_model] Shuffle images before selecting <number>",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-V",
+        "--vis-torch-images",
+        help="[Only used w/ from_model] Label augmented images from torch loader, not originals",
         action="store_true",
     )
 
@@ -388,12 +426,14 @@ if __name__ == "__main__":
     group.add_argument(
         "-w",
         "--wandb-run-path",
-        help="Wandb run (e.g. 'image-regression/wnevejfn' in config)",
+        help="[Only used w/ from_model] [Mutually exclusive (1)] Wandb run"
+        " (e.g. 'image-regression/wnevejfn' in config)",
     )
     group.add_argument(
         "-c",
         "--config-paths",
-        help="Path to (.pth, .yaml) for the (model, config) files (space separated)",
+        help="[Only used w/ from_model] [Mutually exclusive (2)] Path to"
+        " (.pth, .yaml) for the (model, config) files (space separated)",
         nargs="+",
         type=Path,
     )
@@ -404,7 +444,6 @@ if __name__ == "__main__":
 
     if args.source == "from_file":
         impaths = sorted(args.image_directory.glob(f"*{args.extension}"))
-        images = numpy.array([cv2.imread(str(impath))[::4, ::4] for impath in impaths])
         labels = numpy.array(
             [
                 json.load(impath.with_suffix(".json").open("r"))[args.regression_key]
@@ -412,11 +451,14 @@ if __name__ == "__main__":
             ]
         )
         save_debug_images(
-            x=images, savedir=args.output_directory, labels=labels, from_torch=False
+            impaths,
+            savedir=args.output_directory,
+            labels=labels,
         )
     elif args.source == "from_model":
         assert args.wandb_keyfile.is_file()
         # XOR
+        # TODO: Remove this? Test that this is irrelevant with argparse
         assert bool(args.wandb_run_path is not None) ^ bool(
             args.config_paths is not None
         )
@@ -431,6 +473,13 @@ if __name__ == "__main__":
             key=args.regression_key,
             shuffle=args.shuffle,
             keyfile=args.wandb_keyfile,
+            vis_torch_images=args.vis_torch_images,
         )
     else:
         raise NotImplementedError(f"Source {args.source} not handled")
+
+    if args.video:
+        impaths = sorted(args.output_directory.glob(f"*{args.extension}"))
+        print(f"Creating a video out of all images ({len(impaths)}) in {args.output_directory}")
+        path = compilation_video(impaths=impaths)
+        print(f"Saved {path}")
