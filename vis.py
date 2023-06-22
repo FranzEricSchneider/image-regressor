@@ -22,6 +22,9 @@ from image_regressor.model import flattener, get_models
 from image_regressor.utils import login_wandb, system_check
 
 
+numpy.set_printoptions(suppress=True, precision=4)
+
+
 def read_rgb(impath):
     return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
@@ -75,11 +78,27 @@ def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
 
 
 def save_debug_images(
-    impaths, savedir, labels=None, prefix="debug", from_torch=None, metakeys=None
+    impaths,
+    savedir,
+    labels=None,
+    prefix="debug",
+    from_torch=None,
+    metakeys=None,
+    sortkey=None,
 ):
 
     if labels is None:
         labels = [None] * len(x)
+
+    if sortkey is not None:
+        order = numpy.argsort(
+            [
+                json.load(impath.with_suffix(".json").open("r")).get(sortkey, 0)
+                for impath in impaths
+            ]
+        )
+    else:
+        order = list(range(len(impaths)))
 
     for i, (impath, label) in enumerate(zip(impaths, labels)):
 
@@ -96,7 +115,11 @@ def save_debug_images(
                     uint8_image, f"{key}: {data.get(key, 'None')}", level=1 + j
                 )
 
-        new_path = savedir.joinpath(impath.name)
+        if sortkey is None:
+            name = impath.name
+        else:
+            name = f"{numpy.where(order == i)[0][0]:04}_{impath.name}"
+        new_path = savedir.joinpath(name)
         cv2.imwrite(str(new_path), uint8_image)
         print(f"Saved {new_path}")
 
@@ -194,7 +217,7 @@ def visually_label_images(
     print(f"Started visualizing at {datetime.now()}")
     count = 0
     for x, value, paths in loader:
-        paths = map(Path, paths)
+        paths = [Path(p) for p in paths]
         x = x.to(device)
         output = model(x)
         if model.is_autoencoder:
@@ -411,6 +434,11 @@ if __name__ == "__main__":
         default="value",
     )
     parser.add_argument(
+        "-t",
+        "--sort-key",
+        help="json key we want to sort images by - DOESN'T CURRENTLY WORK FOR FROM_MODEL",
+    )
+    parser.add_argument(
         "-v",
         "--video",
         help="Whether to turn output images into a compilation video",
@@ -477,6 +505,7 @@ if __name__ == "__main__":
             savedir=args.output_directory,
             labels=labels,
             metakeys=args.extra_labels,
+            sortkey=args.sort_key,
         )
     elif args.source == "from_model":
         assert args.wandb_keyfile.is_file()
