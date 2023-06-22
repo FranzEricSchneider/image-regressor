@@ -117,8 +117,15 @@ def highlight_text(image, text, level=0):
     )
 
 
-def torch_img_to_array(torch_img):
+def torch_img_to_array(torch_img, sigma=3):
+    # Convert torch to numpy
     float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
+    # If torch images are normalized, then we can
+    # 1) scale that down to get a certain number of sigmas into -0.5 - 0.5
+    # 2) add 0.5 so we're from 0 - 1
+    # 3) clip so the high-sigma values are maxed at 0 and 1 instead of clipping
+    if float_image.min() < 0:
+        float_image = numpy.clip((float_image / (2 * sigma)) + 0.5, 0, 1)
     uint8_image = (float_image * 255).astype(numpy.uint8)
     if uint8_image.shape[2] == 3:
         uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
