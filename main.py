@@ -41,9 +41,10 @@ def main():
     if config["wandb"]:
         login_wandb(config)
     models = get_models(config, test_loader, device, debug=True)
-    if config["wandb"] and not config["is_autoencoder"]:
+    if config["wandb"]:
         run = wandb_run(config)
-        vis_model(models, config, (test_loader,), device, prefixes=("load-test",))
+        if not config["is_autoencoder"]:
+            vis_model(models, config, (test_loader,), device, prefixes=("load-test",))
     else:
         run = None
 
