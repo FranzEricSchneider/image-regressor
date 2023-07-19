@@ -56,7 +56,12 @@ ENDERS = {
 
 def get_tools(loader, model, config, num_cpus):
 
-    criterion = nn.MSELoss()
+    if model.is_autoencoder:
+        # NOTE - if using SSIM, have to do 1 - SSIM(im1, im2)
+        # criterion = SSIM(window_size=11, size_average=True)
+        criterion = nn.MSELoss()
+    else:
+        criterion = nn.MSELoss()
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config["lr"], weight_decay=config["wd"]
