@@ -1,8 +1,10 @@
+from os import getenv
+
 CONFIG = {
     "data_dir": None,
     "extension": "jpg",
     "starting_channels": 3,
-    "regression_key": "value",
+    "regression_key": "labeltype",
     "is_autoencoder": False,
     "wandb": True,
     "wandb_print":
@@ -13,7 +15,7 @@ CONFIG = {
         "lin_depth",
         "lin_width",
     ],
-    "keyfile": "/hdd/wandb.json",
+    "keyfile": getenv("HOME") + "/wandb.json",
     "train": True,
     # Option to log images during training to the /tmp/ dir for visualization.
     # This is likely a slowdown so should be used for debugging.

@@ -352,11 +352,11 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def model_from_pth(settings, device, config_path=None):
+def model_from_pth(settings, device, config_path=None, pretrained=None):
 
     if isinstance(settings, Path):
         load_file = settings
-        kwargs = kwargs = network_kwargs(load_wandb_config(config_path=config_path))
+        kwargs = network_kwargs(load_wandb_config(config_path=config_path))
     elif isinstance(settings, dict):
         path = wandb.restore(**settings)
         path = Path(path.name)
@@ -371,6 +371,9 @@ def model_from_pth(settings, device, config_path=None):
         )
     else:
         raise NotImplementedError(f"Unknown setting type: {type(settings)}")
+
+    if pretrained is not None:
+        kwargs["pretrained"] = pretrained
 
     model = Network(**kwargs).to(device)
     model.load_state_dict(
@@ -390,10 +393,13 @@ def get_models(config, loader, device, debug=False):
         models = [Network(**network_kwargs(config)).to(device)]
     else:
         if config["config_paths"] is None:
-            models = [model_from_pth(settings, device) for settings in config["models"]]
+            models = [
+                model_from_pth(settings, device, pretrained=False)
+                for settings in config["models"]
+            ]
         else:
             models = [
-                model_from_pth(settings, device, path)
+                model_from_pth(settings, device, path, pretrained=False)
                 for settings, path in zip(config["models"], config["config_paths"])
             ]
 
