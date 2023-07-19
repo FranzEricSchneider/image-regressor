@@ -171,7 +171,6 @@ def visually_label_images(
     keyfile,
     metakeys,
 ):
-
     # Needed before we can restore the models
     login_wandb({"keyfile": keyfile})
 
@@ -217,6 +216,11 @@ def visually_label_images(
     print(f"Started visualizing at {datetime.now()}")
     count = 0
     for x, value, paths in loader:
+        # Enforce a rule of thumb size limit (expand if we want later)
+        assert all(
+            numpy.array(x.shape[2:]) < 1500
+        ), f"Images too large ({x.shape[2:]}), were they downsampled?"
+
         paths = [Path(p) for p in paths]
         x = x.to(device)
         output = model(x)

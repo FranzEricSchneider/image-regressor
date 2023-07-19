@@ -8,6 +8,21 @@ import yaml
 import wandb
 
 
+def pretrained_kwargs(pretrained, name):
+    new = hasattr(torchvision.models, "ResNet50_Weights")
+    if new:
+        if pretrained:
+            # https://pytorch.org/vision/stable/models.html
+            return {"weights": "IMAGENET1K_V1"}
+        else:
+            return {"weights": None}
+    else:
+        if pretrained:
+            return {"pretrained": True}
+        else:
+            return {"pretrained": False}
+
+
 def flattener(sequential):
     assert isinstance(sequential, nn.Sequential)
     for item in sequential:
@@ -20,7 +35,7 @@ def flattener(sequential):
 
 def existing_as_embedder(name, in_channels, pretrained):
     model_function = getattr(torchvision.models, name)
-    model = model_function(pretrained=pretrained)
+    model = model_function(**pretrained_kwargs(pretrained, name))
 
     modules = [m for m in model.children()]
 
