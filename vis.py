@@ -29,24 +29,61 @@ def read_rgb(impath):
     return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
 
-def vis_model(models, config, loaders, device, prefixes):
+def vis_model(models, config, loaders, device, prefixes, results):
     """
-    Calls ScoreCam on various model layers, then saves those to wandb.
+    Call a series of visualizations.
 
     Arguments:
         models: list of models, which will be called individually
-        config: the keys (idx_vis_layers, idx_vis_layers, num_vis_images) are
-            used to determine how many layers to visualize
+        config: the keys (idx_vis_layers, idx_vis_layers, num_scorecam_images,
+            is_autoencoder) are used to determine how many layers to visualize
+        loaders: list of image loaders, e.g. the train and test loaders
+        device: pytorch requirement, "cpu" or "cuda"
+        prefixes: string prefix that should match the number of loaders, will
+            be included in the filename for human readability
+        results: list of dictionaries, each containing ("impaths", "outputs",
+            and "losses") terms for each item in the loader. The list should
+            correspond with loaders and prefixes. For example, it might be
+            [{train loader results}, {test loader results}]. If an empty list
+            is given, won't do this visualization.
+    """
+
+    impaths = []
+
+    # Do ScoreCam visualization on certain layers
+    if not config["is_autoencoder"]:
+        impaths.extend(scorecam_vis(models, config, loaders, device, prefixes))
+
+    # Visualize output results from worst to best performing
+    impaths.extend(
+        sorted_vis(
+            results=results,
+            prefixes=prefixes,
+            key=config["regression_key"],
+            num_sample=config["num_in_out_images"],
+        )
+    )
+
+    wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
+
+
+def scorecam_vis(models, config, loaders, device, prefixes):
+    """
+    Calls ScoreCam on various model layers, then returns those images.
+
+    Arguments:
+        models: list of models, which will be called individually
+        config: the keys (idx_vis_layers, idx_vis_layers, num_scorecam_images,
+            is_autoencoder) are used to determine how many layers to visualize
         loaders: list of image loaders, e.g. the train and test loaders
         device: pytorch requirement, "cpu" or "cuda"
         prefixes: string prefix that should match the number of loaders, will
             be included in the filename for human readability
     """
-
     impaths = []
     for i, model in enumerate(models):
         for loader, prefix in zip(loaders, prefixes):
-            for x, y in loader:
+            for x, y, _ in loader:
                 if config["idx_vis_layers"] == "all":
                     indices = range(len([_ for _ in flattener(model.embedding)]))
                 else:
@@ -54,7 +91,7 @@ def vis_model(models, config, loaders, device, prefixes):
 
                 for target in indices:
                     cam = ScoreCam(model, target_layer=target)
-                    for j in range(config["num_vis_images"]):
+                    for j in range(config["num_scorecam_images"]):
                         save_path = Path(
                             f"/tmp/{prefix}_model{i}_testim{j}_layer{target}.jpg"
                         )
@@ -65,8 +102,35 @@ def vis_model(models, config, loaders, device, prefixes):
                         )
                         impaths.append(save_path)
                 break
+    return impaths
 
-    wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
+
+def sorted_vis(results, prefixes, key, num_sample):
+    """
+    TODO
+    """
+
+    impaths = []
+    for result, prefix in zip(results, prefixes):
+        if result is None:  # REMOVE
+            continue        # REMOVE
+        # Sample the desired indices (high to low loss)
+        import ipdb; ipdb.set_trace()
+        indices = numpy.argsort(result["losses"])
+
+        # Then save the images
+        impaths.extend(
+            save_debug_images(
+                impaths=[Path(result["impaths"][i] for i in indices)],
+                savedir=Path("/tmp/"),
+                labels=[result["outputs"][i] for i in indices],
+                prefix=f"{prefix}_sorted-vis_",
+                from_torch=None,
+                metakeys=[key],
+            )
+        )
+
+    return impaths
 
 
 def scale_0_1(matrix):
@@ -75,18 +139,22 @@ def scale_0_1(matrix):
 
 def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
 
+    impaths = []
     timestamp = str(int(time.time() * 1e6))
 
     for label, tensor, imloss in (("original", x, None), ("decoded", images, loss)):
         for i, torch_img in enumerate(tensor):
-            name = f"{prefix}_{timestamp}_{i}_{label}.jpg"
+            name = f"{prefix}{timestamp}_{i}_{label}.jpg"
             uint8_image = torch_img_to_array(torch_img)
             if imloss is not None:
                 imloss = f"{imloss:.2f}"
                 print(f"Loss: {imloss}")
                 highlight_text(uint8_image, imloss)
                 name.replace(".jpg", f"_{imloss}.jpg")
-            cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
+            impaths.append(savedir.joinpath(name))
+            cv2.imwrite(str(impaths[-1]), uint8_image)
+
+    return impaths
 
 
 def save_debug_images(
@@ -112,6 +180,7 @@ def save_debug_images(
     else:
         order = list(range(len(impaths)))
 
+    new_impaths = []
     for i, (impath, label) in enumerate(zip(impaths, labels)):
 
         uint8_image = cv2.imread(str(impath))
@@ -128,12 +197,13 @@ def save_debug_images(
                 )
 
         if sortkey is None:
-            name = impath.name
+            name = prefix + impath.name
         else:
-            name = f"{numpy.where(order == i)[0][0]:04}_{impath.name}"
-        new_path = savedir.joinpath(name)
-        cv2.imwrite(str(new_path), uint8_image)
-        print(f"Saved {new_path}")
+            name = f"{prefix}{numpy.where(order == i)[0][0]:04}_{impath.name}"
+        new_impaths.append(savedir.joinpath(name))
+        cv2.imwrite(str(new_impaths[-1]), uint8_image)
+
+    return new_impaths
 
 
 def highlight_text(image, text, level=0):

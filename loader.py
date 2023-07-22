@@ -134,6 +134,7 @@ def get_loaders(config, debug=False):
             extension=config["extension"],
             channels=config["starting_channels"],
             is_autoencoder=config["is_autoencoder"],
+            include_path=True,
         )
     test_loader = build_loader(
         data_path=config["data_dir"].joinpath("test"),
@@ -144,6 +145,7 @@ def get_loaders(config, debug=False):
         extension=config["extension"],
         channels=config["starting_channels"],
         is_autoencoder=config["is_autoencoder"],
+        include_path=True,
     )
 
     if debug:
@@ -153,10 +155,10 @@ def get_loaders(config, debug=False):
         print(f"Train batches = {len(train_loader)}")
         print(f"Test batches = {len(test_loader)}")
         for name, loader in (("TRAIN", train_loader), ("TEST", test_loader)):
-            for x, y in loader:
-                print(
-                    f"{name}: x.shape: {x.shape}, y.shape: {y.shape}, y[:4]: {y[:4].flatten()}"
-                )
+            for x, y, paths in loader:
+                print(f"{name}: x.shape: {x.shape}")
+                print(f"y.shape: {y.shape}, y[:4]: {y[:4].flatten()}")
+                print(f"len(paths): {len(paths)}")
                 break
         print("=" * 80)
 

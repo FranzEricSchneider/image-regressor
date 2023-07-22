@@ -426,7 +426,7 @@ def get_models(config, loader, device, debug=False):
             model.embedding.load_state_dict(pretrained.embedding.state_dict())
 
     if debug:
-        for x, y in loader:
+        for x, y, _ in loader:
             x = x.to(device)
             for i, model in enumerate(models):
                 print(f"NUMBER {i+1}")

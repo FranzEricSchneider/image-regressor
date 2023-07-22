@@ -17,12 +17,18 @@ CONFIG = {
     ],
     "keyfile": getenv("HOME") + "/wandb.json",
     "train": True,
+
     # Option to log images during training to the /tmp/ dir for visualization.
     # This is likely a slowdown so should be used for debugging.
-    "log_images": False,
-    "num_vis_images": 1,
+    "log_training_images": False,
+
+    # How many images to visualize for the ScoreCam method
+    "num_scorecam_images": 1,
     # Choose between "all" or a list of layer indices
     "idx_vis_layers": [3],
+    # How many images to visualize with input/output visualization
+    "num_in_out_images": 5,
+
     "models": [],
     # "models": ["checkpoint.pth"],
     # "models": [{"name": "checkpoint.pth", "run_path": "image-regression/3q34k58v", "replace": True}],
