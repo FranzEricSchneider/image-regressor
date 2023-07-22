@@ -30,6 +30,18 @@ def read_rgb(impath):
 
 
 def vis_model(models, config, loaders, device, prefixes):
+    """
+    Calls ScoreCam on various model layers, then saves those to wandb.
+
+    Arguments:
+        models: list of models, which will be called individually
+        config: the keys (idx_vis_layers, idx_vis_layers, num_vis_images) are
+            used to determine how many layers to visualize
+        loaders: list of image loaders, e.g. the train and test loaders
+        device: pytorch requirement, "cpu" or "cuda"
+        prefixes: string prefix that should match the number of loaders, will
+            be included in the filename for human readability
+    """
 
     impaths = []
     for i, model in enumerate(models):
@@ -171,24 +183,45 @@ def visually_label_images(
     keyfile,
     metakeys,
 ):
+    """
+    1) Load model according to arguments
+    2) Load the image loaders according to arguments
+    3) Save visualized images, according to the model type (autoencoder or
+       regression)
+
+    Arguments:
+        imdir: pathlib.Path where we load images to process from
+        savedir: pathlib.Path where output images are saved
+        run_path: string for a wandb run, e.g. "image-regression/3q34k58v"
+        wandb_paths: two-element list of a .pth and .yaml file
+        augmentation: pathlib.Path for augmentation file for the loader
+        extension: suffix like ".png" or ".jpg" for the loader
+        number: how many images to process (for speed reasons)
+        key: (string) the key in the json files for the GT value
+        shuffle: (bool) whether to shuffle the loader
+        keyfile: pathlib.Path for our wandb login file
+        metakeys: other values in the json file we want to include in the
+            visualization (e.g. writing on the image)
+    """
+
     # Needed before we can restore the models
     login_wandb({"keyfile": keyfile})
 
     num_cpus, device = system_check()
     if run_path is not None:
-        models = {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
+        model = {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
         config_paths = None
     elif wandb_paths is not None:
         # Should be given as a tuple, where each is a Path() to a .pth or .yaml
         # file we want to load
-        models, config_path = wandb_paths
+        model, config_path = wandb_paths
         config_paths = [config_path]
     else:
         raise ValueError(f"Invalid paths given: {run_path}, {config_paths}")
 
     models = get_models(
         config={
-            "models": [models],
+            "models": [model],
             "config_paths": config_paths,
             "pretrained_embedding": None,
         },
