@@ -29,7 +29,7 @@ def read_rgb(impath):
     return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
 
-def vis_model(models, config, loaders, device, prefixes, results, sampled_paths=None):
+def vis_model(models, config, loaders, device, prefixes, results, embeddings, sampled_paths=None):
     """
     Call a series of visualizations.
 
@@ -46,6 +46,8 @@ def vis_model(models, config, loaders, device, prefixes, results, sampled_paths=
             correspond with loaders and prefixes. For example, it might be
             [{train loader results}, {test loader results}]. If an empty list
             is given, won't do this visualization.
+        embeddings: list of (B, H, W, C) arrays, corresponding to the prefixes.
+            These will contain TODO
         sampled_paths: Dictionary of {prefix: [paths]} to be used in
             repetitive_vis. The dictionary can be empty the first time through,
             it will be populated and returned
@@ -80,6 +82,10 @@ def vis_model(models, config, loaders, device, prefixes, results, sampled_paths=
         sampled_paths=sampled_paths,
     )
     impaths.extend(vised_paths)
+
+    impaths.extend(
+        embedding_vis(results=results, embeddings=embeddings, prefixes=prefixes)
+    )
 
     wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
 
@@ -214,6 +220,14 @@ def repetitive_vis(results, prefixes, key, num_sample, sampled_paths):
         impaths.extend(saved_impaths)
 
     return impaths, sampled_paths
+
+
+def embedding_vis(results, embeddings, prefixes):
+
+    for result, batch_embedding, prefix in zip(results, embeddings, prefixes):
+        for impath, embedding in zip(result["impaths"], batch_embedding):
+            image = read_rgb(impath)
+            import ipdb; ipdb.set_trace(); pass
 
 
 def scale_0_1(matrix):

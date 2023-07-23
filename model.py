@@ -303,10 +303,10 @@ class Network(nn.Module):
                         layers.append(nn.Dropout(p=lin_dropout))
             self.classifier = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, return_embedding=False):
         original_shape = x.shape
-        x = self.embedding(x)
-        x = self.pool(x)
+        embedding = self.embedding(x)
+        x = self.pool(embedding)
         # To make this pytorch 1.13 compatible, squeeze each dim separately. In
         # 2.0 you can pass in a tuple
         x = torch.squeeze(torch.squeeze(x, dim=3), dim=2)
@@ -318,7 +318,12 @@ class Network(nn.Module):
             x = self.decoder_post(x)
         else:
             x = self.classifier(x)
-        return x
+
+        if return_embedding:
+            # Return the embedding in the form (B, H, W, C)
+            return x, numpy.array(embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float)
+        else:
+            return x
 
 
 def network_kwargs(config):

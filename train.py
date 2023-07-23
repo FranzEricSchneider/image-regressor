@@ -133,7 +133,11 @@ def train_step(
         y = y.to(device)
 
         with torch.cuda.amp.autocast():
-            out = model(x)
+            # Sample the embeddings the first batch
+            if i == 0:
+                out, embeddings = model(x, return_embedding=True)
+            else:
+                out = model(x)
             loss = criterion(out, y)
             per_input_loss = per_input_criterion(out, y)
 
@@ -173,7 +177,7 @@ def train_step(
         f"    LR: {float(optimizer.param_groups[0]['lr']):.1E}"
     )
 
-    return train_loss, result
+    return train_loss, result, embeddings
 
 
 def evaluate(criterion, per_input_criterion, loader, models, device):
@@ -193,7 +197,11 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
     for i, (x, y, paths) in enumerate(loader):
         x, y = x.to(device), y.to(device)
         with torch.inference_mode():
-            out = model(x)
+            # Sample the embeddings the first batch
+            if i == 0:
+                out, embeddings = model(x, return_embedding=True)
+            else:
+                out = model(x)
             loss = criterion(out, y)
             per_input_loss = per_input_criterion(out, y)
         val_loss += float(loss.detach().cpu())
@@ -213,7 +221,7 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
     # Get the average val_loss across the epoch
     val_loss /= len(loader)
 
-    return val_loss, result
+    return val_loss, result, embeddings
 
 
 def run_train(
@@ -254,7 +262,7 @@ def run_train(
     for epoch in range(config["epochs"]):
         print("Epoch", epoch + 1)
 
-        train_loss, train_result = train_step(**step_kwargs)
+        train_loss, train_result, train_embeddings = train_step(**step_kwargs)
         if config["scheduler"] == "StepLR":
             scheduler.step()
         losses["train"].append(train_loss)
@@ -268,7 +276,7 @@ def run_train(
             or epoch == config["epochs"] - 1
             or config["scheduler"] == "ReduceLROnPlateau"
         ):
-            val_loss, val_result = evaluate(
+            val_loss, val_result, val_embeddings = evaluate(
                 criterion, per_input_criterion, val_loader, [model], device
             )
             print(f"{str(datetime.datetime.now())}    Validation Loss: {val_loss:.4f}")
@@ -300,6 +308,7 @@ def run_train(
                     device=device,
                     prefixes=("train-train", "train-val"),
                     results=(train_result, val_result),
+                    embeddings=(train_embeddings, val_embeddings),
                     sampled_paths=sampled_paths,
                 )
             best_val_loss = val_loss
