@@ -249,6 +249,7 @@ def run_train(
     best_val_loss = 1e6
 
     losses = {"train": [], "val": []}
+    sampled_paths = {}
 
     for epoch in range(config["epochs"]):
         print("Epoch", epoch + 1)
@@ -270,9 +271,7 @@ def run_train(
             val_loss, val_result = evaluate(
                 criterion, per_input_criterion, val_loader, [model], device
             )
-            print(
-                f"{str(datetime.datetime.now())}    Validation Loss: {val_loss:.4f}"
-            )
+            print(f"{str(datetime.datetime.now())}    Validation Loss: {val_loss:.4f}")
             log_values.update({"val_loss": val_loss})
             losses["val"].append(val_loss)
             if config["scheduler"] == "ReduceLROnPlateau":
@@ -294,13 +293,14 @@ def run_train(
             )
             if config["wandb"]:
                 wandb.save("checkpoint.pth")
-                vis_model(
+                sampled_paths = vis_model(
                     models=[model],
                     config=config,
                     loaders=(train_loader, val_loader),
                     device=device,
                     prefixes=("train-train", "train-val"),
                     results=(train_result, val_result),
+                    sampled_paths=sampled_paths,
                 )
             best_val_loss = val_loss
 

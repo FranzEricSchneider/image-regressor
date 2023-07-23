@@ -29,7 +29,7 @@ def read_rgb(impath):
     return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
 
-def vis_model(models, config, loaders, device, prefixes, results):
+def vis_model(models, config, loaders, device, prefixes, results, sampled_paths=None):
     """
     Call a series of visualizations.
 
@@ -46,7 +46,13 @@ def vis_model(models, config, loaders, device, prefixes, results):
             correspond with loaders and prefixes. For example, it might be
             [{train loader results}, {test loader results}]. If an empty list
             is given, won't do this visualization.
+        sampled_paths: Dictionary of {prefix: [paths]} to be used in
+            repetitive_vis. The dictionary can be empty the first time through,
+            it will be populated and returned
     """
+
+    if sampled_paths is None:
+        sampled_paths = {}
 
     impaths = []
 
@@ -64,7 +70,20 @@ def vis_model(models, config, loaders, device, prefixes, results):
         )
     )
 
+    # Visualize the same random set of images every epoch (random sample the
+    # first time through)
+    vised_paths, sampled_paths = repetitive_vis(
+        results=results,
+        prefixes=prefixes,
+        key=config["regression_key"],
+        num_sample=config["num_in_out_images"],
+        sampled_paths=sampled_paths,
+    )
+    impaths.extend(vised_paths)
+
     wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
+
+    return sampled_paths
 
 
 def scorecam_vis(models, config, loaders, device, prefixes):
@@ -107,7 +126,20 @@ def scorecam_vis(models, config, loaders, device, prefixes):
 
 def sorted_vis(results, prefixes, key, num_sample):
     """
-    TODO
+    Samples a set of images from low to high loss to visualize.
+
+    NOTE: The names for these sampled images should stay constant from epoch
+    to epoch for consistency/interpolation in wandb.
+
+    Arguments:
+        results: List of dictionaries for separate experiments (e.g. one set of
+            results from training, another from validation). Dictionaries
+            should contain equal-sized lists of [losses, outputs, impaths]
+        prefixes: List of strings that label each set of results
+        key: (string) the key in the json files for the GT value
+        num_sample: Number of images to sample
+
+    Returns: List of new images generated
     """
 
     impaths = []
@@ -135,6 +167,53 @@ def sorted_vis(results, prefixes, key, num_sample):
         impaths.extend(saved_impaths)
 
     return impaths
+
+
+def repetitive_vis(results, prefixes, key, num_sample, sampled_paths):
+    """
+    Given a set of paths to visualize (keyed by prefix), visualizes those paths.
+
+    Arguments:
+        results: List of dictionaries for separate experiments (e.g. one set of
+            results from training, another from validation). Dictionaries
+            should contain equal-sized lists of [losses, outputs, impaths]
+        prefixes: List of strings that label each set of results
+        key: (string) the key in the json files for the GT value
+        num_sample: Number of images to sample if paths are not given
+        sampled_paths: Dictionary of {prefix: [paths]}. If prefix does not
+            exist as a key, we will sample random paths and pass that back for
+            the next time around
+
+    Returns: Tuple
+        [0] List of new images generated
+        [1] sampled_paths dictionary, either the same or with new sampled paths
+            if a prefix was not present in the dictionary
+    """
+
+    impaths = []
+    for result, prefix in zip(results, prefixes):
+
+        paths = sampled_paths.get(prefix, None)
+        if paths is None:
+            sampled_indices = numpy.random.choice(
+                range(len(result["impaths"])), size=num_sample, replace=False
+            )
+            paths = [result["impaths"][i] for i in sampled_indices]
+            sampled_paths[prefix] = paths
+        indices = [result["impaths"].index(path) for path in paths]
+
+        # Then save the images
+        saved_impaths = save_debug_images(
+            impaths=[Path(result["impaths"][i]) for i in indices],
+            savedir=Path("/tmp/"),
+            labels=[result["outputs"][i] for i in indices],
+            prefix=f"{prefix}_repetitive-vis_",
+            from_torch=None,
+            metakeys=[key],
+        )
+        impaths.extend(saved_impaths)
+
+    return impaths, sampled_paths
 
 
 def scale_0_1(matrix):
