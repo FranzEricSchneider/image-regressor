@@ -23,7 +23,7 @@ def value_too_high(values, epoch, max_epoch, scale=4):
         return (
             True,
             f"Value {values[-1]} was more than {scale}x that of the starting"
-            f" value, {values[0]}"
+            f" value, {values[0]}",
         )
     else:
         return DEFAULT
@@ -176,7 +176,7 @@ def train_step(
     return train_loss, result
 
 
-def evaluate(criterion, loader, models, device):
+def evaluate(criterion, per_input_criterion, loader, models, device):
 
     # TODO: Handle the ensemble case
     assert len(models) == 1
@@ -184,22 +184,28 @@ def evaluate(criterion, loader, models, device):
     model.eval()
 
     val_loss = 0
-    batch_bar = tqdm(total=len(loader),
-                     dynamic_ncols=True,
-                     leave=False,
-                     position=0,
-                     desc="Val")
+    batch_bar = tqdm(
+        total=len(loader), dynamic_ncols=True, leave=False, position=0, desc="Val"
+    )
 
-    for i, (x, y, _) in enumerate(loader):
+    result = {"impaths": [], "losses": [], "outputs": []}
+
+    for i, (x, y, paths) in enumerate(loader):
         x, y = x.to(device), y.to(device)
         with torch.inference_mode():
             out = model(x)
             loss = criterion(out, y)
+            per_input_loss = per_input_criterion(out, y)
         val_loss += float(loss.detach().cpu())
         batch_bar.set_postfix(avg_loss=f"{val_loss/(i+1):.4f}")
         batch_bar.update()
 
-        del x, y, out
+        # Do some bookkeeping, save these for later use
+        result["impaths"].extend(paths)
+        result["outputs"].extend([float(o) for o in out.detach().cpu()])
+        result["losses"].extend([float(pil) for pil in per_input_loss.detach().cpu()])
+
+        del x, y, out, loss, per_input_loss
         torch.cuda.empty_cache()
 
     batch_bar.close()
@@ -207,7 +213,7 @@ def evaluate(criterion, loader, models, device):
     # Get the average val_loss across the epoch
     val_loss /= len(loader)
 
-    return val_loss
+    return val_loss, result
 
 
 def run_train(
@@ -252,12 +258,20 @@ def run_train(
             scheduler.step()
         losses["train"].append(train_loss)
 
-        log_values = {"train_loss": train_loss,
-                      "lr": float(optimizer.param_groups[0]["lr"])}
-        if (epoch % config["eval_report_iter"] == 0 or epoch == config["epochs"] - 1 or config["scheduler"] == "ReduceLROnPlateau"):
-            val_loss = evaluate(criterion, val_loader, [model], device)
+        log_values = {
+            "train_loss": train_loss,
+            "lr": float(optimizer.param_groups[0]["lr"]),
+        }
+        if (
+            epoch % config["eval_report_iter"] == 0
+            or epoch == config["epochs"] - 1
+            or config["scheduler"] == "ReduceLROnPlateau"
+        ):
+            val_loss, val_result = evaluate(
+                criterion, per_input_criterion, val_loader, [model], device
+            )
             print(
-                f"{str(datetime.datetime.now())}" f"    Validation Loss: {val_loss:.4f}"
+                f"{str(datetime.datetime.now())}    Validation Loss: {val_loss:.4f}"
             )
             log_values.update({"val_loss": val_loss})
             losses["val"].append(val_loss)
@@ -286,17 +300,16 @@ def run_train(
                     loaders=(train_loader, val_loader),
                     device=device,
                     prefixes=("train-train", "train-val"),
-                    results=(train_result, None),
+                    results=(train_result, val_result),
                 )
             best_val_loss = val_loss
 
         # End early in some circumstances
         end = False
         for name, kwargs in config.get("end_early", {}).items():
-            end, message = ENDERS[name](losses["val"],
-                                        epoch,
-                                        config["epochs"],
-                                        **kwargs)
+            end, message = ENDERS[name](
+                losses["val"], epoch, config["epochs"], **kwargs
+            )
             if end is True:
                 print("*" * 80)
                 print(f"ENDING EARLY\n{message}")

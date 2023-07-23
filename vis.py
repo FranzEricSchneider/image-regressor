@@ -112,8 +112,6 @@ def sorted_vis(results, prefixes, key, num_sample):
 
     impaths = []
     for result, prefix in zip(results, prefixes):
-        if result is None:  # REMOVE
-            continue        # REMOVE
 
         # Sample the desired indices (high to low loss)
         step = len(result["losses"]) // (num_sample - 1)
