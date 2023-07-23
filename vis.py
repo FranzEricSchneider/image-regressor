@@ -114,21 +114,27 @@ def sorted_vis(results, prefixes, key, num_sample):
     for result, prefix in zip(results, prefixes):
         if result is None:  # REMOVE
             continue        # REMOVE
+
         # Sample the desired indices (high to low loss)
-        import ipdb; ipdb.set_trace()
-        indices = numpy.argsort(result["losses"])
+        step = len(result["losses"]) // (num_sample - 1)
+        argsorted = numpy.argsort(result["losses"])
+        indices = [idx for idx in argsorted[::step]]
+        if len(indices) < num_sample:
+            indices += [argsorted[-1]]
+        else:
+            indices[-1] = argsorted[-1]
 
         # Then save the images
-        impaths.extend(
-            save_debug_images(
-                impaths=[Path(result["impaths"][i] for i in indices)],
-                savedir=Path("/tmp/"),
-                labels=[result["outputs"][i] for i in indices],
-                prefix=f"{prefix}_sorted-vis_",
-                from_torch=None,
-                metakeys=[key],
-            )
+        saved_impaths = save_debug_images(
+            impaths=[Path(result["impaths"][i]) for i in indices],
+            savedir=Path("/tmp/"),
+            labels=[result["outputs"][i] for i in indices],
+            prefix=f"{prefix}_sorted-vis_",
+            from_torch=None,
+            metakeys=[key],
+            use_index=True,
         )
+        impaths.extend(saved_impaths)
 
     return impaths
 
@@ -161,11 +167,15 @@ def save_debug_images(
     impaths,
     savedir,
     labels=None,
-    prefix="debug",
+    prefix="debug_",
+    use_index=False,
     from_torch=None,
     metakeys=None,
     sortkey=None,
 ):
+
+    # Can only use one of these
+    assert not (use_index and (sortkey is not None))
 
     if labels is None:
         labels = [None] * len(x)
@@ -197,7 +207,10 @@ def save_debug_images(
                 )
 
         if sortkey is None:
-            name = prefix + impath.name
+            if use_index:
+                name = f"{prefix}{i:04}.jpg"
+            else:
+                name = prefix + impath.name
         else:
             name = f"{prefix}{numpy.where(order == i)[0][0]:04}_{impath.name}"
         new_impaths.append(savedir.joinpath(name))
