@@ -1,3 +1,4 @@
+import argparse
 import numpy
 import os
 from pathlib import Path
@@ -251,7 +252,7 @@ class Network(nn.Module):
             layers = [
                 nn.Linear(cnn_outdim, 128),
                 nn.ReLU(),
-                nn.Linear(128, 3**2 * 32),
+                nn.Linear(128, 3 ** 2 * 32),
                 nn.ReLU(),
                 nn.Unflatten(dim=1, unflattened_size=(32, 3, 3)),
             ]
@@ -322,8 +323,9 @@ class Network(nn.Module):
 
         if return_embedding:
             # Return the embedding in the form (B, H, W, C)
-            return x, numpy.array(
-                embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float
+            return (
+                x,
+                numpy.array(embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float),
             )
         else:
             return x
@@ -450,3 +452,42 @@ def get_models(config, loader, device, debug=False):
     }
 
     return models
+
+
+def get_model_locally():
+    parser = argparse.ArgumentParser(description="Download wandb model")
+    parser.add_argument(
+        "save_dir", type=Path, help="Path to dir where model should be saved"
+    )
+    parser.add_argument(
+        "wandb_run_path", help="Path to wandb run (e.g. image-regression/3q34k58v)"
+    )
+    args = parser.parse_args()
+
+    assert args.save_dir.is_dir()
+
+    # There are two files, the .pth model file and the .yaml config
+    paths = []
+    for filename in ["checkpoint.pth", "config.yaml"]:
+        path = Path(
+            wandb.restore(
+                name=filename, run_path=args.wandb_run_path, replace=True
+            ).name
+        )
+
+        # Do some surgery and insert the run path
+        run_key = args.wandb_run_path.replace("/", "_")
+        name = path.name.replace(".", f"_{run_key}.")
+
+        # Move to the save dir
+        final_path = args.save_dir.joinpath(name)
+        os.rename(path, final_path)
+        paths.append(final_path)
+
+    print("Downloaded the following model files:")
+    for path in paths:
+        print(f"\t{path}")
+
+
+if __name__ == "__main__":
+    get_model_locally()
