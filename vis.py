@@ -50,7 +50,7 @@ def vis_model(
             [{train loader results}, {test loader results}]. If an empty list
             is given, won't do this visualization.
         embeddings: list of (B, H, W, C) arrays, corresponding to the prefixes.
-            These will contain TODO
+            These will contain the embeddings for a batch of images
         sampled_paths: Dictionary of {prefix: [paths]} to be used in
             repetitive_vis. The dictionary can be empty the first time through,
             it will be populated and returned
