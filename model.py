@@ -1,3 +1,4 @@
+import numpy
 import os
 from pathlib import Path
 import torch
@@ -250,7 +251,7 @@ class Network(nn.Module):
             layers = [
                 nn.Linear(cnn_outdim, 128),
                 nn.ReLU(),
-                nn.Linear(128, 3 ** 2 * 32),
+                nn.Linear(128, 3**2 * 32),
                 nn.ReLU(),
                 nn.Unflatten(dim=1, unflattened_size=(32, 3, 3)),
             ]
@@ -303,10 +304,10 @@ class Network(nn.Module):
                         layers.append(nn.Dropout(p=lin_dropout))
             self.classifier = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, return_embedding=False):
         original_shape = x.shape
-        x = self.embedding(x)
-        x = self.pool(x)
+        embedding = self.embedding(x)
+        x = self.pool(embedding)
         # To make this pytorch 1.13 compatible, squeeze each dim separately. In
         # 2.0 you can pass in a tuple
         x = torch.squeeze(torch.squeeze(x, dim=3), dim=2)
@@ -318,7 +319,14 @@ class Network(nn.Module):
             x = self.decoder_post(x)
         else:
             x = self.classifier(x)
-        return x
+
+        if return_embedding:
+            # Return the embedding in the form (B, H, W, C)
+            return x, numpy.array(
+                embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float
+            )
+        else:
+            return x
 
 
 def network_kwargs(config):
@@ -426,7 +434,7 @@ def get_models(config, loader, device, debug=False):
             model.embedding.load_state_dict(pretrained.embedding.state_dict())
 
     if debug:
-        for x, y in loader:
+        for x, y, _ in loader:
             x = x.to(device)
             for i, model in enumerate(models):
                 print(f"NUMBER {i+1}")

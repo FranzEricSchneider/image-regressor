@@ -23,7 +23,7 @@ def value_too_high(values, epoch, max_epoch, scale=4):
         return (
             True,
             f"Value {values[-1]} was more than {scale}x that of the starting"
-            f" value, {values[0]}"
+            f" value, {values[0]}",
         )
     else:
         return DEFAULT
@@ -60,8 +60,10 @@ def get_tools(loader, model, config, num_cpus):
         # NOTE - if using SSIM, have to do 1 - SSIM(im1, im2)
         # criterion = SSIM(window_size=11, size_average=True)
         criterion = nn.MSELoss()
+        per_input_criterion = nn.MSELoss(reduction="none")
     else:
         criterion = nn.MSELoss()
+        per_input_criterion = nn.MSELoss(reduction="none")
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config["lr"], weight_decay=config["wd"]
@@ -72,13 +74,13 @@ def get_tools(loader, model, config, num_cpus):
     # Mixed precision
     scaler = torch.cuda.amp.GradScaler()
 
-    return (criterion, optimizer, scheduler, scaler)
+    return (criterion, per_input_criterion, optimizer, scheduler, scaler)
 
 
 def sanity_check(criterion, loader, model, device):
 
     with torch.no_grad():
-        for i, (x, y) in enumerate(loader):
+        for i, (x, y, _) in enumerate(loader):
 
             x = x.to(device)
             y = y.to(device)
@@ -101,12 +103,13 @@ def train_step(
     model,
     optimizer,
     criterion,
+    per_input_criterion,
     scaler,
     config,
     device,
     scheduler=None,
     log_loss=False,
-    log_images=False,
+    log_training_images=False,
 ):
 
     model.train()
@@ -114,11 +117,13 @@ def train_step(
         total=len(loader), dynamic_ncols=True, leave=False, position=0, desc="Train"
     )
     train_loss = 0
+    result = {"impaths": [], "losses": [], "outputs": []}
 
-    for i, (x, y) in enumerate(loader):
+    for i, (x, y, paths) in enumerate(loader):
 
-        if log_images:
-            save_debug_images(x, Path("/tmp/"))
+        if log_training_images:
+            debug_impaths = save_debug_images(x, Path("/tmp/"))
+            print(f"Saved debug images: {debug_impaths}")
 
         # Zero gradients (necessary to call explicitly in case you have split
         # training up across multiple devices)
@@ -128,8 +133,18 @@ def train_step(
         y = y.to(device)
 
         with torch.cuda.amp.autocast():
-            out = model(x)
+            # Sample the embeddings the first batch
+            if i == 0:
+                out, embeddings = model(x, return_embedding=True)
+            else:
+                out = model(x)
             loss = criterion(out, y)
+            per_input_loss = per_input_criterion(out, y)
+
+        # Do some bookkeeping, save these for later use
+        result["impaths"].extend(paths)
+        result["outputs"].extend([float(o) for o in out.detach().cpu()])
+        result["losses"].extend([float(pil) for pil in per_input_loss.detach().cpu()])
 
         scaler.scale(loss).backward()  # A.k.a. loss.backward()
         scaler.step(optimizer)  # A.k.a. optimizer.step()
@@ -148,7 +163,7 @@ def train_step(
         if scheduler is not None:
             scheduler.step()
 
-        del x, y, out, loss
+        del x, y, out, loss, per_input_loss
         torch.cuda.empty_cache()
 
     batch_bar.close()
@@ -162,10 +177,10 @@ def train_step(
         f"    LR: {float(optimizer.param_groups[0]['lr']):.1E}"
     )
 
-    return train_loss
+    return train_loss, result, embeddings
 
 
-def evaluate(criterion, loader, models, device):
+def evaluate(criterion, per_input_criterion, loader, models, device):
 
     # TODO: Handle the ensemble case
     assert len(models) == 1
@@ -173,22 +188,32 @@ def evaluate(criterion, loader, models, device):
     model.eval()
 
     val_loss = 0
-    batch_bar = tqdm(total=len(loader),
-                     dynamic_ncols=True,
-                     leave=False,
-                     position=0,
-                     desc="Val")
+    batch_bar = tqdm(
+        total=len(loader), dynamic_ncols=True, leave=False, position=0, desc="Val"
+    )
 
-    for i, (x, y) in enumerate(loader):
+    result = {"impaths": [], "losses": [], "outputs": []}
+
+    for i, (x, y, paths) in enumerate(loader):
         x, y = x.to(device), y.to(device)
         with torch.inference_mode():
-            out = model(x)
+            # Sample the embeddings the first batch
+            if i == 0:
+                out, embeddings = model(x, return_embedding=True)
+            else:
+                out = model(x)
             loss = criterion(out, y)
+            per_input_loss = per_input_criterion(out, y)
         val_loss += float(loss.detach().cpu())
         batch_bar.set_postfix(avg_loss=f"{val_loss/(i+1):.4f}")
         batch_bar.update()
 
-        del x, y, out
+        # Do some bookkeeping, save these for later use
+        result["impaths"].extend(paths)
+        result["outputs"].extend([float(o) for o in out.detach().cpu()])
+        result["losses"].extend([float(pil) for pil in per_input_loss.detach().cpu()])
+
+        del x, y, out, loss, per_input_loss
         torch.cuda.empty_cache()
 
     batch_bar.close()
@@ -196,7 +221,7 @@ def evaluate(criterion, loader, models, device):
     # Get the average val_loss across the epoch
     val_loss /= len(loader)
 
-    return val_loss
+    return val_loss, result, embeddings
 
 
 def run_train(
@@ -207,7 +232,7 @@ def run_train(
     torch.cuda.empty_cache()
     gc.collect()
 
-    (criterion, optimizer, scheduler, scaler) = get_tools(
+    (criterion, per_input_criterion, optimizer, scheduler, scaler) = get_tools(
         train_loader, model, config, num_cpus
     )
     step_kwargs = {
@@ -215,41 +240,46 @@ def run_train(
         "model": model,
         "optimizer": optimizer,
         "criterion": criterion,
+        "per_input_criterion": per_input_criterion,
         "scaler": scaler,
         "config": config,
         "device": device,
-        "log_images": config["log_images"],
+        "log_training_images": config["log_training_images"],
     }
+    if config["scheduler"] in ["constant", "CosMulti", "LRTest", "OneCycleLR"]:
+        step_kwargs["scheduler"] = scheduler
+        if config["scheduler"] == "LRTest":
+            step_kwargs["log_loss"] = True
+
     if debug:
         sanity_check(criterion, train_loader, model, device)
 
     best_val_loss = 1e6
 
     losses = {"train": [], "val": []}
+    sampled_paths = {}
 
     for epoch in range(config["epochs"]):
         print("Epoch", epoch + 1)
 
+        train_loss, train_result, train_embeddings = train_step(**step_kwargs)
         if config["scheduler"] == "StepLR":
-            train_loss = train_step(**step_kwargs)
             scheduler.step()
-        elif config["scheduler"] == "ReduceLROnPlateau":
-            train_loss = train_step(**step_kwargs)
-        elif config["scheduler"] in ["CosMulti", "OneCycleLR", "constant"]:
-            train_loss = train_step(**step_kwargs, scheduler=scheduler)
-        elif config["scheduler"] == "LRTest":
-            train_loss = train_step(**step_kwargs, scheduler=scheduler, log_loss=True)
-        else:
-            raise NotImplementedError()
         losses["train"].append(train_loss)
 
-        log_values = {"train_loss": train_loss,
-                      "lr": float(optimizer.param_groups[0]["lr"])}
-        if (epoch % config["eval_report_iter"] == 0 or epoch == config["epochs"] - 1 or config["scheduler"] == "ReduceLROnPlateau"):
-            val_loss = evaluate(criterion, val_loader, [model], device)
-            print(
-                f"{str(datetime.datetime.now())}" f"    Validation Loss: {val_loss:.4f}"
+        log_values = {
+            "train_loss": train_loss,
+            "lr": float(optimizer.param_groups[0]["lr"]),
+        }
+        if (
+            epoch % config["eval_report_iter"] == 0
+            or epoch == config["epochs"] - 1
+            or config["scheduler"] == "ReduceLROnPlateau"
+        ):
+            val_loss, val_result, val_embeddings = evaluate(
+                criterion, per_input_criterion, val_loader, [model], device
             )
+            print(f"{str(datetime.datetime.now())}    Validation Loss: {val_loss:.4f}")
             log_values.update({"val_loss": val_loss})
             losses["val"].append(val_loss)
             if config["scheduler"] == "ReduceLROnPlateau":
@@ -271,23 +301,24 @@ def run_train(
             )
             if config["wandb"]:
                 wandb.save("checkpoint.pth")
-                if not config["is_autoencoder"]:
-                    vis_model(
-                        [model],
-                        config,
-                        (val_loader, train_loader),
-                        device,
-                        prefixes=("train-val", "train-train"),
-                    )
+                sampled_paths = vis_model(
+                    models=[model],
+                    config=config,
+                    loaders=(train_loader, val_loader),
+                    device=device,
+                    prefixes=("train-train", "train-val"),
+                    results=(train_result, val_result),
+                    embeddings=(train_embeddings, val_embeddings),
+                    sampled_paths=sampled_paths,
+                )
             best_val_loss = val_loss
 
         # End early in some circumstances
         end = False
         for name, kwargs in config.get("end_early", {}).items():
-            end, message = ENDERS[name](losses["val"],
-                                        epoch,
-                                        config["epochs"],
-                                        **kwargs)
+            end, message = ENDERS[name](
+                losses["val"], epoch, config["epochs"], **kwargs
+            )
             if end is True:
                 print("*" * 80)
                 print(f"ENDING EARLY\n{message}")

@@ -10,6 +10,7 @@ from matplotlib import pyplot
 import numpy
 from pathlib import Path
 from PIL import Image
+from sklearn.preprocessing import StandardScaler
 import time
 import torch
 from torch import nn
@@ -29,12 +30,88 @@ def read_rgb(impath):
     return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
 
-def vis_model(models, config, loaders, device, prefixes):
+def vis_model(
+    models, config, loaders, device, prefixes, results, embeddings, sampled_paths=None
+):
+    """
+    Call a series of visualizations.
 
+    Arguments:
+        models: list of models, which will be called individually
+        config: the keys (idx_vis_layers, idx_vis_layers, num_scorecam_images,
+            is_autoencoder) are used to determine how many layers to visualize
+        loaders: list of image loaders, e.g. the train and test loaders
+        device: pytorch requirement, "cpu" or "cuda"
+        prefixes: string prefix that should match the number of loaders, will
+            be included in the filename for human readability
+        results: list of dictionaries, each containing ("impaths", "outputs",
+            and "losses") terms for each item in the loader. The list should
+            correspond with loaders and prefixes. For example, it might be
+            [{train loader results}, {test loader results}]. If an empty list
+            is given, won't do this visualization.
+        embeddings: list of (B, H, W, C) arrays, corresponding to the prefixes.
+            These will contain the embeddings for a batch of images
+        sampled_paths: Dictionary of {prefix: [paths]} to be used in
+            repetitive_vis. The dictionary can be empty the first time through,
+            it will be populated and returned
+    """
+
+    if sampled_paths is None:
+        sampled_paths = {}
+
+    impaths = []
+
+    # Do ScoreCam visualization on certain layers
+    if not config["is_autoencoder"]:
+        impaths.extend(scorecam_vis(models, config, loaders, device, prefixes))
+
+    # Visualize output results from worst to best performing
+    impaths.extend(
+        sorted_vis(
+            results=results,
+            prefixes=prefixes,
+            key=config["regression_key"],
+            num_sample=config["num_in_out_images"],
+        )
+    )
+
+    # Visualize the same random set of images every epoch (random sample the
+    # first time through)
+    vised_paths, sampled_paths = repetitive_vis(
+        results=results,
+        prefixes=prefixes,
+        key=config["regression_key"],
+        num_sample=config["num_in_out_images"],
+        sampled_paths=sampled_paths,
+    )
+    impaths.extend(vised_paths)
+
+    impaths.extend(
+        embedding_vis(results=results, embeddings=embeddings, prefixes=prefixes)
+    )
+
+    wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
+
+    return sampled_paths
+
+
+def scorecam_vis(models, config, loaders, device, prefixes):
+    """
+    Calls ScoreCam on various model layers, then returns those images.
+
+    Arguments:
+        models: list of models, which will be called individually
+        config: the keys (idx_vis_layers, idx_vis_layers, num_scorecam_images,
+            is_autoencoder) are used to determine how many layers to visualize
+        loaders: list of image loaders, e.g. the train and test loaders
+        device: pytorch requirement, "cpu" or "cuda"
+        prefixes: string prefix that should match the number of loaders, will
+            be included in the filename for human readability
+    """
     impaths = []
     for i, model in enumerate(models):
         for loader, prefix in zip(loaders, prefixes):
-            for x, y in loader:
+            for x, y, _ in loader:
                 if config["idx_vis_layers"] == "all":
                     indices = range(len([_ for _ in flattener(model.embedding)]))
                 else:
@@ -42,7 +119,7 @@ def vis_model(models, config, loaders, device, prefixes):
 
                 for target in indices:
                     cam = ScoreCam(model, target_layer=target)
-                    for j in range(config["num_vis_images"]):
+                    for j in range(config["num_scorecam_images"]):
                         save_path = Path(
                             f"/tmp/{prefix}_model{i}_testim{j}_layer{target}.jpg"
                         )
@@ -53,8 +130,207 @@ def vis_model(models, config, loaders, device, prefixes):
                         )
                         impaths.append(save_path)
                 break
+    return impaths
 
-    wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
+
+def sorted_vis(results, prefixes, key, num_sample):
+    """
+    Samples a set of images from low to high loss to visualize.
+
+    NOTE: The names for these sampled images should stay constant from epoch
+    to epoch for consistency/interpolation in wandb.
+
+    Arguments:
+        results: List of dictionaries for separate experiments (e.g. one set of
+            results from training, another from validation). Dictionaries
+            should contain equal-sized lists of [losses, outputs, impaths]
+        prefixes: List of strings that label each set of results
+        key: (string) the key in the json files for the GT value
+        num_sample: Number of images to sample
+
+    Returns: List of new images generated
+    """
+
+    impaths = []
+    for result, prefix in zip(results, prefixes):
+
+        # Sample the desired indices (high to low loss)
+        step = len(result["losses"]) // (num_sample - 1)
+        argsorted = numpy.argsort(result["losses"])
+        indices = [idx for idx in argsorted[::step]]
+        if len(indices) < num_sample:
+            indices += [argsorted[-1]]
+        else:
+            indices[-1] = argsorted[-1]
+
+        # Then save the images
+        saved_impaths = save_debug_images(
+            impaths=[Path(result["impaths"][i]) for i in indices],
+            savedir=Path("/tmp/"),
+            labels=[result["outputs"][i] for i in indices],
+            prefix=f"{prefix}_sorted-vis_",
+            from_torch=None,
+            metakeys=[key],
+            use_index=True,
+        )
+        impaths.extend(saved_impaths)
+
+    return impaths
+
+
+def repetitive_vis(results, prefixes, key, num_sample, sampled_paths):
+    """
+    Given a set of paths to visualize (keyed by prefix), visualizes those paths.
+
+    Arguments:
+        results: List of dictionaries for separate experiments (e.g. one set of
+            results from training, another from validation). Dictionaries
+            should contain equal-sized lists of [losses, outputs, impaths]
+        prefixes: List of strings that label each set of results
+        key: (string) the key in the json files for the GT value
+        num_sample: Number of images to sample if paths are not given
+        sampled_paths: Dictionary of {prefix: [paths]}. If prefix does not
+            exist as a key, we will sample random paths and pass that back for
+            the next time around
+
+    Returns: Tuple
+        [0] List of new images generated
+        [1] sampled_paths dictionary, either the same or with new sampled paths
+            if a prefix was not present in the dictionary
+    """
+
+    impaths = []
+    for result, prefix in zip(results, prefixes):
+
+        paths = sampled_paths.get(prefix, None)
+        if paths is None:
+            sampled_indices = numpy.random.choice(
+                range(len(result["impaths"])), size=num_sample, replace=False
+            )
+            paths = [result["impaths"][i] for i in sampled_indices]
+            sampled_paths[prefix] = paths
+        indices = [result["impaths"].index(path) for path in paths]
+
+        # Then save the images
+        saved_impaths = save_debug_images(
+            impaths=[Path(result["impaths"][i]) for i in indices],
+            savedir=Path("/tmp/"),
+            labels=[result["outputs"][i] for i in indices],
+            prefix=f"{prefix}_repetitive-vis_",
+            from_torch=None,
+            metakeys=[key],
+        )
+        impaths.extend(saved_impaths)
+
+    return impaths, sampled_paths
+
+
+# So I know I should just use sklearn PCA, but I experienced a bizarre error
+# where on some computers, when I imported torch before running PCA it would
+# freeze indefinitely. Writing my own version to sidestep that weird issue.
+def pca_fit(X, n_components):
+    """
+    Perform Principal Component Analysis (PCA) on the input data. [ChatGPT]
+
+    Parameters:
+        X (numpy array): The input data with shape (num_samples, num_features).
+            ASSUMES THAT THIS IS STANDARDIZED (0 mean, std 1)
+        n_components (int): The number of principal components to retain.
+
+    Returns:
+        numpy array: The matrix containing the principal components.
+    """
+
+    # Compute the covariance matrix
+    covariance_matrix = numpy.cov(X, rowvar=False)
+
+    # Perform eigenvalue decomposition on the covariance matrix
+    eigenvalues, eigenvectors = numpy.linalg.eigh(covariance_matrix)
+
+    # Sort eigenvectors in descending order of eigenvalues
+    sorted_indices = numpy.argsort(eigenvalues)[::-1]
+    eigenvectors_sorted = eigenvectors[:, sorted_indices]
+
+    # Select the top n_components eigenvectors
+    principal_components = eigenvectors_sorted[:, :n_components]
+
+    return principal_components
+
+
+def pca_transform(X, principal_components):
+    """
+    Apply Principal Component Analysis (PCA) to the input data. [ChatGPT]
+
+    Parameters:
+        X (numpy array): The input data with shape (num_samples, num_features).
+            ASSUMES THAT THIS IS STANDARDIZED (0 mean, std 1)
+        principal_components (numpy array): top n_components eigenvectors
+
+    Returns:
+        numpy array: Transformed data with reduced dimensions.
+    """
+
+    # Project the data onto the new principal component space
+    return numpy.dot(X, principal_components)
+
+
+def embedding_vis(results, embeddings, prefixes, max_images=6, sample_pixels=100000):
+
+    # Scales things around 0 with std=1
+    scaler = StandardScaler()
+
+    impaths = []
+    for result, batch_embedding, prefix in zip(results, embeddings, prefixes):
+
+        # Only take a certain number of images no matter what. It's easiest to
+        # grab embeddings by batch, so we don't want to depend on a small batch
+        # size
+        if batch_embedding.shape[0] > max_images:
+            batch_embedding = batch_embedding[:max_images]
+
+        # Choose PCA axes based on all batch data (subsampled if necessary)
+        batch_flat = batch_embedding.reshape(-1, batch_embedding.shape[-1])
+        if batch_flat.shape[0] > sample_pixels:
+            sampled_indices = numpy.random.choice(
+                range(batch_flat.shape[0]), replace=False, size=sample_pixels
+            )
+            batch_flat = batch_flat[sampled_indices]
+        principals = pca_fit(scaler.fit_transform(batch_flat), 3)
+
+        for i, (impath, embedding) in enumerate(
+            zip(result["impaths"], batch_embedding)
+        ):
+
+            # Just a sanity check (H, W, C)
+            assert len(embedding.shape) == 3
+
+            # Flatten the image embedding
+            flat = embedding.reshape(-1, embedding.shape[-1])
+            # Convert to the PCA-ed version
+            compressed = pca_transform(scaler.fit_transform(flat), principals)
+            # Squish this to be 0-mean, unit variance
+            unitized = scaler.fit_transform(compressed)
+            # Reshape into the image shape
+            im_embed = unitized.reshape(embedding.shape[:-1] + (3,))
+
+            # Do some scaling to make this renderable (0-255) [subtract by the
+            # desired minimum, divide by the desired range]
+            im_embed -= -2
+            im_embed /= 4
+            im_embed = (numpy.clip(im_embed, 0, 1) * 255).astype(numpy.uint8)
+
+            # Save it with the image
+            image = cv2.imread(str(impath))
+            # Pad the image embedding so they can be displayed together
+            padded = numpy.pad(
+                im_embed, ((0, image.shape[0] - im_embed.shape[0]), (10, 0), (0, 0))
+            )
+            # Choose a save location
+            path = Path(f"/tmp/{prefix}_embedding-vis_batch{i:02}.jpg")
+            cv2.imwrite(str(path), numpy.hstack((image, padded)))
+            impaths.append(path)
+
+    return impaths
 
 
 def scale_0_1(matrix):
@@ -63,29 +339,37 @@ def scale_0_1(matrix):
 
 def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
 
+    impaths = []
     timestamp = str(int(time.time() * 1e6))
 
     for label, tensor, imloss in (("original", x, None), ("decoded", images, loss)):
         for i, torch_img in enumerate(tensor):
-            name = f"{prefix}_{timestamp}_{i}_{label}.jpg"
+            name = f"{prefix}{timestamp}_{i}_{label}.jpg"
             uint8_image = torch_img_to_array(torch_img)
             if imloss is not None:
                 imloss = f"{imloss:.2f}"
                 print(f"Loss: {imloss}")
                 highlight_text(uint8_image, imloss)
                 name.replace(".jpg", f"_{imloss}.jpg")
-            cv2.imwrite(str(savedir.joinpath(name)), uint8_image)
+            impaths.append(savedir.joinpath(name))
+            cv2.imwrite(str(impaths[-1]), uint8_image)
+
+    return impaths
 
 
 def save_debug_images(
     impaths,
     savedir,
     labels=None,
-    prefix="debug",
+    prefix="debug_",
+    use_index=False,
     from_torch=None,
     metakeys=None,
     sortkey=None,
 ):
+
+    # Can only use one of these
+    assert not (use_index and (sortkey is not None))
 
     if labels is None:
         labels = [None] * len(x)
@@ -100,6 +384,7 @@ def save_debug_images(
     else:
         order = list(range(len(impaths)))
 
+    new_impaths = []
     for i, (impath, label) in enumerate(zip(impaths, labels)):
 
         uint8_image = cv2.imread(str(impath))
@@ -116,12 +401,16 @@ def save_debug_images(
                 )
 
         if sortkey is None:
-            name = impath.name
+            if use_index:
+                name = f"{prefix}{i:04}.jpg"
+            else:
+                name = prefix + impath.name
         else:
-            name = f"{numpy.where(order == i)[0][0]:04}_{impath.name}"
-        new_path = savedir.joinpath(name)
-        cv2.imwrite(str(new_path), uint8_image)
-        print(f"Saved {new_path}")
+            name = f"{prefix}{numpy.where(order == i)[0][0]:04}_{impath.name}"
+        new_impaths.append(savedir.joinpath(name))
+        cv2.imwrite(str(new_impaths[-1]), uint8_image)
+
+    return new_impaths
 
 
 def highlight_text(image, text, level=0):
@@ -171,24 +460,45 @@ def visually_label_images(
     keyfile,
     metakeys,
 ):
+    """
+    1) Load model according to arguments
+    2) Load the image loaders according to arguments
+    3) Save visualized images, according to the model type (autoencoder or
+       regression)
+
+    Arguments:
+        imdir: pathlib.Path where we load images to process from
+        savedir: pathlib.Path where output images are saved
+        run_path: string for a wandb run, e.g. "image-regression/3q34k58v"
+        wandb_paths: two-element list of a .pth and .yaml file
+        augmentation: pathlib.Path for augmentation file for the loader
+        extension: suffix like ".png" or ".jpg" for the loader
+        number: how many images to process (for speed reasons)
+        key: (string) the key in the json files for the GT value
+        shuffle: (bool) whether to shuffle the loader
+        keyfile: pathlib.Path for our wandb login file
+        metakeys: other values in the json file we want to include in the
+            visualization (e.g. writing on the image)
+    """
+
     # Needed before we can restore the models
     login_wandb({"keyfile": keyfile})
 
     num_cpus, device = system_check()
     if run_path is not None:
-        models = {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
+        model = {"name": "checkpoint.pth", "run_path": run_path, "replace": True}
         config_paths = None
     elif wandb_paths is not None:
         # Should be given as a tuple, where each is a Path() to a .pth or .yaml
         # file we want to load
-        models, config_path = wandb_paths
+        model, config_path = wandb_paths
         config_paths = [config_path]
     else:
         raise ValueError(f"Invalid paths given: {run_path}, {config_paths}")
 
     models = get_models(
         config={
-            "models": [models],
+            "models": [model],
             "config_paths": config_paths,
             "pretrained_embedding": None,
         },
