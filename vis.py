@@ -10,6 +10,7 @@ from matplotlib import pyplot
 import numpy
 from pathlib import Path
 from PIL import Image
+from sklearn.preprocessing import StandardScaler
 import time
 import torch
 from torch import nn
@@ -29,7 +30,9 @@ def read_rgb(impath):
     return cv2.cvtColor(cv2.imread(str(impath)), cv2.COLOR_BGR2RGB)
 
 
-def vis_model(models, config, loaders, device, prefixes, results, embeddings, sampled_paths=None):
+def vis_model(
+    models, config, loaders, device, prefixes, results, embeddings, sampled_paths=None
+):
     """
     Call a series of visualizations.
 
@@ -222,12 +225,112 @@ def repetitive_vis(results, prefixes, key, num_sample, sampled_paths):
     return impaths, sampled_paths
 
 
-def embedding_vis(results, embeddings, prefixes):
+# So I know I should just use sklearn PCA, but I experienced a bizarre error
+# where on some computers, when I imported torch before running PCA it would
+# freeze indefinitely. Writing my own version to sidestep that weird issue.
+def pca_fit(X, n_components):
+    """
+    Perform Principal Component Analysis (PCA) on the input data. [ChatGPT]
 
+    Parameters:
+        X (numpy array): The input data with shape (num_samples, num_features).
+            ASSUMES THAT THIS IS STANDARDIZED (0 mean, std 1)
+        n_components (int): The number of principal components to retain.
+
+    Returns:
+        numpy array: The matrix containing the principal components.
+    """
+
+    # Compute the covariance matrix
+    covariance_matrix = numpy.cov(X, rowvar=False)
+
+    # Perform eigenvalue decomposition on the covariance matrix
+    eigenvalues, eigenvectors = numpy.linalg.eigh(covariance_matrix)
+
+    # Sort eigenvectors in descending order of eigenvalues
+    sorted_indices = numpy.argsort(eigenvalues)[::-1]
+    eigenvectors_sorted = eigenvectors[:, sorted_indices]
+
+    # Select the top n_components eigenvectors
+    principal_components = eigenvectors_sorted[:, :n_components]
+
+    return principal_components
+
+
+def pca_transform(X, principal_components):
+    """
+    Apply Principal Component Analysis (PCA) to the input data. [ChatGPT]
+
+    Parameters:
+        X (numpy array): The input data with shape (num_samples, num_features).
+            ASSUMES THAT THIS IS STANDARDIZED (0 mean, std 1)
+        principal_components (numpy array): top n_components eigenvectors
+
+    Returns:
+        numpy array: Transformed data with reduced dimensions.
+    """
+
+    # Project the data onto the new principal component space
+    return numpy.dot(X, principal_components)
+
+
+def embedding_vis(results, embeddings, prefixes, max_images=6, sample_pixels=100000):
+
+    # Scales things around 0 with std=1
+    scaler = StandardScaler()
+
+    impaths = []
     for result, batch_embedding, prefix in zip(results, embeddings, prefixes):
-        for impath, embedding in zip(result["impaths"], batch_embedding):
-            image = read_rgb(impath)
-            import ipdb; ipdb.set_trace(); pass
+
+        # Only take a certain number of images no matter what. It's easiest to
+        # grab embeddings by batch, so we don't want to depend on a small batch
+        # size
+        if batch_embedding.shape[0] > max_images:
+            batch_embedding = batch_embedding[:max_images]
+
+        # Choose PCA axes based on all batch data (subsampled if necessary)
+        batch_flat = batch_embedding.reshape(-1, batch_embedding.shape[-1])
+        if batch_flat.shape[0] > sample_pixels:
+            sampled_indices = numpy.random.choice(
+                range(batch_flat.shape[0]), replace=False, size=sample_pixels
+            )
+            batch_flat = batch_flat[sampled_indices]
+        principals = pca_fit(scaler.fit_transform(batch_flat), 3)
+
+        for i, (impath, embedding) in enumerate(
+            zip(result["impaths"], batch_embedding)
+        ):
+
+            # Just a sanity check (H, W, C)
+            assert len(embedding.shape) == 3
+
+            # Flatten the image embedding
+            flat = embedding.reshape(-1, embedding.shape[-1])
+            # Convert to the PCA-ed version
+            compressed = pca_transform(scaler.fit_transform(flat), principals)
+            # Squish this to be 0-mean, unit variance
+            unitized = scaler.fit_transform(compressed)
+            # Reshape into the image shape
+            im_embed = unitized.reshape(embedding.shape[:-1] + (3,))
+
+            # Do some scaling to make this renderable (0-255) [subtract by the
+            # desired minimum, divide by the desired range]
+            im_embed -= -2
+            im_embed /= 4
+            im_embed = (numpy.clip(im_embed, 0, 1) * 255).astype(numpy.uint8)
+
+            # Save it with the image
+            image = cv2.imread(str(impath))
+            # Pad the image embedding so they can be displayed together
+            padded = numpy.pad(
+                im_embed, ((0, image.shape[0] - im_embed.shape[0]), (10, 0), (0, 0))
+            )
+            # Choose a save location
+            path = Path(f"/tmp/{prefix}_embedding-vis_batch{i:02}.jpg")
+            cv2.imwrite(str(path), numpy.hstack((image, padded)))
+            impaths.append(path)
+
+    return impaths
 
 
 def scale_0_1(matrix):

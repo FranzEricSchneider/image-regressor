@@ -41,11 +41,9 @@ def main():
     if config["wandb"]:
         login_wandb(config)
     models = get_models(config, test_loader, device, debug=True)
+    run = None
     if config["wandb"]:
         run = wandb_run(config)
-        vis_model(models, config, (test_loader,), device, prefixes=("load-test",), results=[])
-    else:
-        run = None
 
     if config["train"]:
         assert len(models) == 1

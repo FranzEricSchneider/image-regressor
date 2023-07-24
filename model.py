@@ -1,3 +1,4 @@
+import numpy
 import os
 from pathlib import Path
 import torch
@@ -250,7 +251,7 @@ class Network(nn.Module):
             layers = [
                 nn.Linear(cnn_outdim, 128),
                 nn.ReLU(),
-                nn.Linear(128, 3 ** 2 * 32),
+                nn.Linear(128, 3**2 * 32),
                 nn.ReLU(),
                 nn.Unflatten(dim=1, unflattened_size=(32, 3, 3)),
             ]
@@ -321,7 +322,9 @@ class Network(nn.Module):
 
         if return_embedding:
             # Return the embedding in the form (B, H, W, C)
-            return x, numpy.array(embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float)
+            return x, numpy.array(
+                embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float
+            )
         else:
             return x
 
