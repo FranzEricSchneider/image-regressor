@@ -26,6 +26,10 @@ Note: some visualization code was adapted from https://github.com/utkuozbulak/py
 - `train_size` is the fraction of the data you want to end up as train (vs. test)
 - `downsample` is the integer amount you want to downsample the images, if any
 ```
+from PIL import Image
+from shutil import copy
+from sklearn.model_selection import train_test_split
+
 def nn_data(impaths, directory, train_size=0.8, downsample=4):
     directory.joinpath("train").mkdir(parents=True, exist_ok=False)
     directory.joinpath("test").mkdir(parents=True, exist_ok=False)
