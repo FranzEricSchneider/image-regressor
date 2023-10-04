@@ -22,8 +22,12 @@ from image_regressor.loader import build_loader
 from image_regressor.model import flattener, get_models
 from image_regressor.utils import login_wandb, system_check
 
-
 numpy.set_printoptions(suppress=True, precision=4)
+
+try:
+    LANCZOS = Image.LANCZOS
+except AttributeError:
+    LANCZOS = Image.Resampling.LANCZOS
 
 
 def read_rgb(impath):
@@ -663,7 +667,7 @@ class ScoreCam:
 
         cam = numpy.maximum(cam, 0)
         cam = scale_0_1(cam)
-        cam = Image.fromarray(cam).resize(input_size[::-1], Image.ANTIALIAS)
+        cam = Image.fromarray(cam).resize(input_size[::-1], resample=LANCZOS)
         cam = numpy.uint8(numpy.array(cam) * 255)
         if input_image[0].shape[0] != 1:
             cam = cv2.cvtColor(cam, cv2.COLOR_GRAY2RGB)
