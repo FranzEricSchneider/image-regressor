@@ -4,16 +4,13 @@ CONFIG = {
     "data_dir": None,
     "extension": "jpg",
     "starting_channels": 3,
-    "regression_key": "labeltype",
+    "regression_key": "harvestability_label",
     "is_autoencoder": False,
     "wandb": True,
     "wandb_print":
     [
-        "PW",
-        "train_augmentation_path",
+        "harvest",
         "use_existing",
-        "lin_depth",
-        "lin_width",
     ],
     "keyfile": getenv("HOME") + "/wandb.json",
     "train": True,
@@ -87,7 +84,7 @@ CONFIG = {
     # efficientnet_b0, efficientnet_b1, efficientnet_b2, efficientnet_b3,
     # efficientnet_b4, efficientnet_b5, efficientnet_b6, efficientnet_b7,
     # efficientnet_v2_s, efficientnet_v2_m, efficientnet_v2_l
-    "use_existing": None,
+    "use_existing": "mobilenet_v3_small",
     "pretrained": True,
     # Used only when not using an existing encoder
     "cnn_depth": 3,
