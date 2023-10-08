@@ -110,6 +110,7 @@ def train_step(
     scheduler=None,
     log_loss=False,
     log_training_images=False,
+    train_augmentation_path=None,
 ):
 
     model.train()
@@ -122,7 +123,12 @@ def train_step(
     for i, (x, y, paths) in enumerate(loader):
 
         if log_training_images:
-            debug_impaths = save_debug_images(paths, Path("/tmp/"), from_torch=x)
+            debug_impaths = save_debug_images(
+                paths,
+                Path("/tmp/"),
+                from_torch=x,
+                prefix=f"imgvis_{Path(train_augmentation_path).stem}_",
+            )
             print(f"Saved debug images: {debug_impaths}")
 
         # Zero gradients (necessary to call explicitly in case you have split
@@ -245,6 +251,7 @@ def run_train(
         "config": config,
         "device": device,
         "log_training_images": config["log_training_images"],
+        "train_augmentation_path": config["train_augmentation_path"],
     }
     if config["scheduler"] in ["constant", "CosMulti", "LRTest", "OneCycleLR"]:
         step_kwargs["scheduler"] = scheduler
