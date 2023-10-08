@@ -375,8 +375,11 @@ def save_debug_images(
     # Can only use one of these
     assert not (use_index and (sortkey is not None))
 
+    # Enforce this
+    impaths = [Path(impath) for impath in impaths]
+
     if labels is None:
-        labels = [None] * len(x)
+        labels = [None] * len(impaths)
 
     if sortkey is not None:
         order = numpy.argsort(

@@ -122,7 +122,7 @@ def train_step(
     for i, (x, y, paths) in enumerate(loader):
 
         if log_training_images:
-            debug_impaths = save_debug_images(x, Path("/tmp/"))
+            debug_impaths = save_debug_images(paths, Path("/tmp/"), from_torch=x)
             print(f"Saved debug images: {debug_impaths}")
 
         # Zero gradients (necessary to call explicitly in case you have split
