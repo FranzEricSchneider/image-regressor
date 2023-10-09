@@ -94,11 +94,12 @@ CONFIG = {
     "cnn_downsample": 4,
     "cnn_batchnorm": False,
     "cnn_dropout": None,
-    "pool": "max",  # "avg",
-    "lin_depth": 3,
-    "lin_width": 256,
+    # Used on whatever feature comes out
+    "pool": "avg",  # "max",
+    "lin_depth": 1,
+    "lin_width": 128,
     "lin_batchnorm": True,
-    "lin_dropout": None,
+    "lin_dropout": 0.25,
     # Choices are None or a number. If a number is given, we will squash the
     # final values with a sigmoid and scale it so it's from 0-limit. If we want
     # to set the lower limit in the future we can expand this.
