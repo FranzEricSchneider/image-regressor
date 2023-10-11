@@ -94,6 +94,14 @@ def vis_model(
         embedding_vis(results=results, embeddings=embeddings, prefixes=prefixes)
     )
 
+    # Visualize the first-layer filters of the CNN
+    # TODO: Handle more models - if the model is unrecognized, this will just
+    # return None
+    for i, model in enumerate(models):
+        filter_image = filter_vis(model, f"model-idx{i}")
+        if filter_image is not None:
+            impaths.append(filter_image)
+
     wandb.log({impath.name: wandb.Image(str(impath)) for impath in impaths})
 
     return sampled_paths
@@ -325,16 +333,60 @@ def embedding_vis(results, embeddings, prefixes, max_images=6, sample_pixels=100
 
             # Save it with the image
             image = cv2.imread(str(impath))
-            # Pad the image embedding so they can be displayed together
-            padded = numpy.pad(
-                im_embed, ((0, image.shape[0] - im_embed.shape[0]), (10, 0), (0, 0))
-            )
+            # Resize the image embedding so they can be displayed together
+            im_embed = cv2.resize(im_embed, (image.shape[1], image.shape[0]))
+
             # Choose a save location
             path = Path(f"/tmp/{prefix}_embedding-vis_batch{i:02}.jpg")
-            cv2.imwrite(str(path), numpy.hstack((image, padded)))
+            cv2.imwrite(str(path), numpy.hstack((image, im_embed)))
             impaths.append(path)
 
     return impaths
+
+
+def filter_vis(model, name):
+
+    # Get the first convolutional layer
+    # TODO: Handle more models more elegantly
+    try:
+        conv_layer = model.embedding[0][0][0]
+        assert isinstance(conv_layer, torch.nn.Conv2d)
+    except (TypeError, IndexError, AssertionError):
+        return None
+
+    # Get the kernel weights from the first convolutional layer
+    kernels = conv_layer.weight.data.detach().cpu().numpy()
+    kernels = scale_0_1(kernels)
+    num_kernels = kernels.shape[0]
+
+    # Create a grid to display the kernels
+    cols = 4
+    if num_kernels % cols == 0:
+        rows = num_kernels // cols
+    else:
+        rows = num_kernels // cols + 1
+
+    # Create a figure and axis (assumes 1 inch per kernel)
+    figure, axes = pyplot.subplots(rows, cols, figsize=(cols, rows))
+
+    # Plot each kernel as an image
+    for i in range(num_kernels):
+        row = i // cols
+        col = i % cols
+        # Channels last format
+        axes[row, col].imshow(kernels[i].transpose(1, 2, 0), cmap="gray")
+        axes[row, col].axis("off")
+
+    # Hide any remaining empty subplots
+    for i in range(num_kernels, rows * cols):
+        axes[i // cols, i % cols].axis("off")
+
+    pyplot.tight_layout()
+    save_path = Path(f"/tmp/filter_vis_{name}.jpg")
+    pyplot.savefig(save_path, dpi=100)
+    pyplot.close(figure)
+
+    return save_path
 
 
 def scale_0_1(matrix):
@@ -353,7 +405,7 @@ def save_autoencoder_images(x, savedir, images, prefix="debug", loss=None):
             if imloss is not None:
                 imloss = f"{imloss:.2f}"
                 print(f"Loss: {imloss}")
-                highlight_text(uint8_image, imloss)
+                uint8_image = highlight_text(uint8_image, imloss)
                 name.replace(".jpg", f"_{imloss}.jpg")
             impaths.append(savedir.joinpath(name))
             cv2.imwrite(str(impaths[-1]), uint8_image)
@@ -399,11 +451,11 @@ def save_debug_images(
             uint8_image = numpy.hstack((uint8_image, torch_img_to_array(from_torch[i])))
 
         if label is not None:
-            highlight_text(uint8_image, f"{label:.2f}")
+            uint8_image = highlight_text(uint8_image, f"{label:.2f}")
         if metakeys is not None:
             data = json.load(impath.with_suffix(".json").open("r"))
             for j, key in enumerate(metakeys):
-                highlight_text(
+                uint8_image = highlight_text(
                     uint8_image, f"{key}: {data.get(key, 'None')}", level=1 + j
                 )
 
@@ -421,22 +473,28 @@ def save_debug_images(
 
 
 def highlight_text(image, text, level=0):
-    vstep = 50
+
     white = 255
     black = 0
     if len(image.shape) == 3 and image.shape[2] == 3:
         white = (255, 255, 255)
         black = (0, 0, 0)
+
+    # Reset to a standard size (//4 shape, b/c that's how the text was tuned)
+    image = cv2.resize(image, (1006, 759))
+    vstep = 50
+
     image[vstep * level : vstep * (level + 1), : 18 * len(text) + 18] = white
     cv2.putText(
         img=image,
         text=text,
         org=(10, 30 + vstep * level),
         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=1,
         color=black,
+        fontScale=1,
         thickness=2,
     )
+    return image
 
 
 def torch_img_to_array(torch_img, sigma=3):

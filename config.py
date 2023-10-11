@@ -11,6 +11,7 @@ CONFIG = {
     [
         "harvest",
         "use_existing",
+        "data_dir",
     ],
     "keyfile": getenv("HOME") + "/wandb.json",
     "train": True,
@@ -22,7 +23,7 @@ CONFIG = {
     # How many images to visualize for the ScoreCam method
     "num_scorecam_images": 1,
     # Choose between "all" or a list of layer indices
-    "idx_vis_layers": [3],
+    "idx_vis_layers": [0],
     # How many images to visualize with input/output visualization
     "num_in_out_images": 5,
 
@@ -43,10 +44,10 @@ CONFIG = {
     "frozen_embedding": False,
 
     "lr": 1e-3,  # 1e-2
-    "scheduler": "constant",
+    "scheduler": "OneCycleLR",
     "StepLR_kwargs": {"step_size": 5, "gamma": 0.2},
-    "LRTest_kwargs": {"min_per_epoch": 4.5, "runtime_min": 45, "start": 1e-6, "end": 1.0},
-    "OneCycleLR_kwargs": {"max_lr": 1e-2, "min_lr": 6e-6},
+    "LRTest_kwargs": {"min_per_epoch": 0.05, "runtime_min": 6, "start": 1e-6, "end": 1.0},
+    "OneCycleLR_kwargs": {"max_lr": 5e-3, "min_lr": 5e-5},
     "CosMulti_kwargs": {"epoch_per_cycle": 5, "eta_min": 6e-6},
     # mode: min (ideally value goes down) or max (opposite)
     # factor: scale factor for LR
@@ -64,10 +65,11 @@ CONFIG = {
     # "batch_size": 500,  # MNIST original size, regressor
     # "batch_size": 32,  # MNIST scaled up
     # "batch_size": 24,  # Beets
+    "batch_size": 256,  # Matrix @ //32,//32
     # "batch_size": 100,  # Outdoors @ //4,//4
     # "batch_size": 52,  # Vines @ //4,//4  (Hand-made model)
     # "batch_size": 10,  # Vines @ //4,//4  (Large model safety)
-    "batch_size": 6,  # Backyard @ //4,//4  (Large model safety)
+    # "batch_size": 6,  # Backyard @ //4,//4  (Large model safety)
     # "epochs": 8,  # Beets
     # "epochs": 40,  # Outdoors
     "epochs": 50,  # Vines
@@ -99,7 +101,7 @@ CONFIG = {
     "lin_depth": 1,
     "lin_width": 128,
     "lin_batchnorm": True,
-    "lin_dropout": 0.25,
+    "lin_dropout": 0.3,
     # Choices are None or a number. If a number is given, we will squash the
     # final values with a sigmoid and scale it so it's from 0-limit. If we want
     # to set the lower limit in the future we can expand this.
