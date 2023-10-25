@@ -1,4 +1,5 @@
 import argparse
+import json
 import numpy
 import os
 from pathlib import Path
@@ -465,6 +466,11 @@ def get_model_locally():
     args = parser.parse_args()
 
     assert args.save_dir.is_dir()
+
+    # Log into wandb
+    keyfile = Path(os.getenv("HOME") + "/wandb.json")
+    assert keyfile.is_file()
+    wandb.login(key=json.load(keyfile.open("r"))["key"])
 
     # There are two files, the .pth model file and the .yaml config
     paths = []

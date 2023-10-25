@@ -1,6 +1,7 @@
 import cv2
 import datetime
 import gc
+import json
 import numpy
 from pathlib import Path
 import time
@@ -54,7 +55,7 @@ ENDERS = {
 }
 
 
-def get_tools(loader, model, config, num_cpus):
+def get_tools(loader, model, config):
 
     if model.is_autoencoder:
         # NOTE - if using SSIM, have to do 1 - SSIM(im1, im2)
@@ -230,16 +231,33 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
     return val_loss, result, embeddings
 
 
-def run_train(
-    train_loader, val_loader, model, config, num_cpus, device, run, debug=False
-):
+def save_inference(models, loaders, prefixes, config, device):
+    model_name = config["models"][0]["run_path"].replace("/", "_")
+    for loader, prefix in zip(loaders, prefixes):
+        _, result, _ = evaluate(
+            nn.MSELoss(), nn.MSELoss(reduction="none"), loader, models, device
+        )
+        file = Path(f"{prefix}_{model_name}.json")
+        json.dump(
+            {
+                Path(impath).name: output
+                for impath, output in zip(result["impaths"], result["outputs"])
+            },
+            file.open("w"),
+            indent=4,
+            sort_keys=True,
+        )
+        print(f"Saved to {file}")
+
+
+def run_train(train_loader, val_loader, model, config, device, run, debug=False):
 
     print(f"Starting training {str(datetime.datetime.now())}")
     torch.cuda.empty_cache()
     gc.collect()
 
     (criterion, per_input_criterion, optimizer, scheduler, scaler) = get_tools(
-        train_loader, model, config, num_cpus
+        train_loader, model, config
     )
     step_kwargs = {
         "loader": train_loader,

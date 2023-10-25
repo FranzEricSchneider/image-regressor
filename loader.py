@@ -124,18 +124,17 @@ def get_loaders(config, debug=False):
 
     # TODO: Consider making a separate validation loader
     train_loader = None
-    if config["train"]:
-        train_loader = build_loader(
-            data_path=config["data_dir"].joinpath("train"),
-            batch_size=config["batch_size"],
-            augpath=config["train_augmentation_path"],
-            shuffle=True,
-            key=config["regression_key"],
-            extension=config["extension"],
-            channels=config["starting_channels"],
-            is_autoencoder=config["is_autoencoder"],
-            include_path=True,
-        )
+    train_loader = build_loader(
+        data_path=config["data_dir"].joinpath("train"),
+        batch_size=config["batch_size"],
+        augpath=config["train_augmentation_path"],
+        shuffle=True,
+        key=config["regression_key"],
+        extension=config["extension"],
+        channels=config["starting_channels"],
+        is_autoencoder=config["is_autoencoder"],
+        include_path=True,
+    )
     test_loader = build_loader(
         data_path=config["data_dir"].joinpath("test"),
         batch_size=config["batch_size"],
