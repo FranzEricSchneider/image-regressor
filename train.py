@@ -199,16 +199,16 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
         total=len(loader), dynamic_ncols=True, leave=False, position=0, desc="Val"
     )
 
-    result = {"impaths": [], "losses": [], "outputs": []}
+    result = {"impaths": [], "losses": [], "outputs": [], "vectors": []}
 
     for i, (x, y, paths) in enumerate(loader):
         x, y = x.to(device), y.to(device)
         with torch.inference_mode():
             # Sample the embeddings the first batch
             if i == 0:
-                out, embeddings = model(x, return_embedding=True)
+                out, vectors, embeddings = model(x, return_embedding=True)
             else:
-                out = model(x)
+                out, vectors = model(x)
             loss = criterion(out, y)
             per_input_loss = per_input_criterion(out, y)
         val_loss += float(loss.detach().cpu())
@@ -219,8 +219,9 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
         result["impaths"].extend(paths)
         result["outputs"].extend([float(o) for o in out.detach().cpu()])
         result["losses"].extend([float(pil) for pil in per_input_loss.detach().cpu()])
+        result["vectors"].extend([v.tolist() for v in vectors.detach().cpu()])
 
-        del x, y, out, loss, per_input_loss
+        del x, y, out, loss, per_input_loss, vectors
         torch.cuda.empty_cache()
 
     batch_bar.close()
@@ -231,13 +232,23 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
     return val_loss, result, embeddings
 
 
-def save_inference(models, loaders, prefixes, config, device):
-    model_name = config["models"][0]["run_path"].replace("/", "_")
-    for loader, prefix in zip(loaders, prefixes):
+def save_inference(models, loaders, keys, config, device):
+
+    if len(config["models"]) == 0:
+        if config["use_existing"] == "":
+            model_name = "handmade"
+        else:
+            model_name = f"{config['use_existing']}_pre-{config['pretrained']}"
+    else:
+        model_name = "_".join([model["run_path"].replace("/", "_")
+                               for model in config["models"]])
+
+    vectors = {"impaths": [], "vectors": []}
+    for loader, key in zip(loaders, keys):
         _, result, _ = evaluate(
             nn.MSELoss(), nn.MSELoss(reduction="none"), loader, models, device
         )
-        file = Path(f"{prefix}_{model_name}.json")
+        file = Path(f"model_{model_name}_{key}.json")
         json.dump(
             {
                 Path(impath).name: output
@@ -248,6 +259,34 @@ def save_inference(models, loaders, prefixes, config, device):
             sort_keys=True,
         )
         print(f"Saved to {file}")
+        # Save the vector embedding results
+        vectors["impaths"].extend(result["impaths"])
+        vectors["vectors"].extend(result["vectors"])
+
+    # TODO: Should we include any other notes in the metadata like how much
+    # the model was trained?
+    # TODO: Make the config stuff more sensical and streamlined
+    file = Path(f"model_{model_name}_embeddings.json")
+    json.dump(
+        {
+            "data": {
+                Path(impath).name: vector
+                for impath, vector in zip(vectors["impaths"], vectors["vectors"])
+            },
+            "metadata": {
+                "datetime": str(datetime.datetime.now()),
+                "models": model_name,
+                "data": str(config["data_dir"]),
+                "pretrained_embedding": str(config["pretrained_embedding"]),
+                "use_existing": str(config["use_existing"]),
+                "pretrained": str(config["pretrained"]),
+            },
+        },
+        file.open("w"),
+        indent=4,
+        sort_keys=True,
+    )
+    print(f"Saved to {file}")
 
 
 def run_train(train_loader, val_loader, model, config, device, run, debug=False):

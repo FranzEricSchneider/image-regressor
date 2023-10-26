@@ -312,24 +312,26 @@ class Network(nn.Module):
         x = self.pool(embedding)
         # To make this pytorch 1.13 compatible, squeeze each dim separately. In
         # 2.0 you can pass in a tuple
-        x = torch.squeeze(torch.squeeze(x, dim=3), dim=2)
+        vector = torch.squeeze(torch.squeeze(x, dim=3), dim=2)
         if self.is_autoencoder is True:
-            x = self.decoder_pre(x)
+            x = self.decoder_pre(vector)
             x = nn.functional.interpolate(
                 x, size=original_shape[-2:], mode="bilinear", align_corners=False
             )
             x = self.decoder_post(x)
         else:
-            x = self.classifier(x)
+            x = self.classifier(vector)
 
         if return_embedding:
-            # Return the embedding in the form (B, H, W, C)
+            # Return the image embedding in the form (B, H, W, C)
             return (
                 x,
+                vector,
                 numpy.array(embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float),
             )
         else:
-            return x
+            # Return the output per image and the vector embedding per image
+            return (x, vector)
 
 
 def network_kwargs(config):
