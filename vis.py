@@ -625,6 +625,32 @@ def visually_label_images(
     print(f"Finished visualizing {count} images at {datetime.now()}")
 
 
+def highlight_images(hero, others, path, size):
+
+    # Create a list of images we want to append together
+    images = []
+    kwargs = {"pad_width": [(5, 5), (5, 5), (0, 0)]}
+
+    # Load the hero image
+    hero = numpy.pad(
+        cv2.resize(read_rgb(hero), size),
+        constant_values=255,
+        **kwargs,
+    )
+    images.append(hero)
+
+    # And the others
+    for other in others:
+        images.append(
+            numpy.pad(
+                cv2.resize(read_rgb(other), size),
+                **kwargs,
+            )
+        )
+
+    cv2.imwrite(str(path), cv2.cvtColor(numpy.hstack(images), cv2.COLOR_RGB2BGR))
+
+
 """
 Code adapted for regression from:
 https://github.com/utkuozbulak/pytorch-cnn-visualizations
