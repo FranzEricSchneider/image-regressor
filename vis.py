@@ -625,11 +625,14 @@ def visually_label_images(
     print(f"Finished visualizing {count} images at {datetime.now()}")
 
 
-def highlight_images(hero, others, path, size):
+def highlight_images(hero, others, path, size, pad=5, text=None):
+
+    if text is None:
+        text = [None] * len(others)
 
     # Create a list of images we want to append together
     images = []
-    kwargs = {"pad_width": [(5, 5), (5, 5), (0, 0)]}
+    kwargs = {"pad_width": [(pad, pad), (pad, pad), (0, 0)]}
 
     # Load the hero image
     hero = numpy.pad(
@@ -640,13 +643,22 @@ def highlight_images(hero, others, path, size):
     images.append(hero)
 
     # And the others
-    for other in others:
-        images.append(
-            numpy.pad(
-                cv2.resize(read_rgb(other), size),
-                **kwargs,
-            )
+    for other, imtext in zip(others, text):
+        image = numpy.pad(
+            cv2.resize(read_rgb(other), size),
+            **kwargs,
         )
+        if imtext is not None:
+            cv2.putText(
+                img=image,
+                text=imtext,
+                org=(5, 18),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                color=(255, 255, 255),
+                fontScale=0.7,
+                thickness=1,
+            )
+        images.append(image)
 
     cv2.imwrite(str(path), cv2.cvtColor(numpy.hstack(images), cv2.COLOR_RGB2BGR))
 
