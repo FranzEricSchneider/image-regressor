@@ -5,6 +5,7 @@ from matplotlib import pyplot
 import numpy
 from pathlib import Path
 
+from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
 
 from image_regressor.vis import highlight_images
@@ -17,12 +18,12 @@ DOWNSIZE = numpy.array([335, 253])
 
 # TODO: Try different distances: two best candidates are euclidean and
 # cosine. Pass into NearestNeighbors as 'metric'
-def inspect_knn(embeddings, imnames, sample, k, imdir, savedir):
+def inspect_knn(embeddings, impaths, sample, k, imdir, savedir):
 
     nn = NearestNeighbors(n_neighbors=k + 1)
     nn.fit(embeddings)
 
-    samples = numpy.random.choice(range(len(imnames)), size=sample, replace=False)
+    samples = numpy.random.choice(range(len(impaths)), size=sample, replace=False)
     # Whenever we use the distances or indices we must skip the first one, that
     # is the original point
     sample_dists, sample_indices = nn.kneighbors(embeddings[samples])
@@ -31,28 +32,28 @@ def inspect_knn(embeddings, imnames, sample, k, imdir, savedir):
         zip(samples, sample_dists, sample_indices)
     ):
         highlight_images(
-            hero=imdir.joinpath(imnames[index]),
-            others=[imdir.joinpath(imnames[k_index]) for k_index in k_indices[1:]],
+            hero=impaths[index],
+            others=[impaths[k_index] for k_index in k_indices[1:]],
             path=savedir.joinpath(f"knn_sample_{i:02}.jpg"),
             size=DOWNSIZE,
         )
     print(f"Saved {sample} {k}-nn images to {savedir}")
 
 
-def inspect_differentials(embeddings, imnames, sample, k, imdir, savedir):
+def inspect_differentials(embeddings, impaths, sample, k, savedir):
     """
     Sample randomly X times and then show oher random samples but sorted so
     that the viewer can see the respective distances
     """
 
-    samples = numpy.random.choice(range(len(imnames)), size=sample, replace=False)
+    samples = numpy.random.choice(range(len(impaths)), size=sample, replace=False)
 
     # TODO: Build in cosine distance capability
     for i, index in enumerate(samples):
 
         # Check a feasibly large number of vectors, select the largest distance
         # and also the closest to 0.5
-        subsamples = numpy.random.choice(range(len(imnames)), size=k, replace=False)
+        subsamples = numpy.random.choice(range(len(impaths)), size=k, replace=False)
         distances = numpy.linalg.norm(embeddings[subsamples] - embeddings[index], axis=1)
 
         # Get the max and the closest to 50%
@@ -64,8 +65,8 @@ def inspect_differentials(embeddings, imnames, sample, k, imdir, savedir):
         lowval = distances[lowind]
 
         highlight_images(
-            hero=imdir.joinpath(imnames[index]),
-            others=[imdir.joinpath(imnames[subsamples[ind]]) for ind in (lowind, midind, maxind)],
+            hero=impaths[index],
+            others=[impaths[subsamples[ind]] for ind in (lowind, midind, maxind)],
             path=savedir.joinpath(f"differential_sample_{i:02}.jpg"),
             size=DOWNSIZE,
             pad=20,
@@ -76,12 +77,36 @@ def inspect_differentials(embeddings, imnames, sample, k, imdir, savedir):
         pyplot.hist(x=distances)
         pyplot.xlabel("Distance from sample")
         pyplot.ylabel("Count")
-        pyplot.title(f"Histogram for distance from {imnames[index]}")
+        pyplot.title(f"Histogram for distance from {impaths[index].name}")
         pyplot.tight_layout()
         pyplot.savefig(savedir.joinpath(f"differential_sample_{i:02}_hist.jpg"))
         pyplot.close()
 
     print(f"Saved {sample} differential images to {savedir}")
+
+
+def visualize_2d(embeddings, metapaths, colorfield, savedir):
+
+    # Apparently TSNE is better than PCA for displaying neighbors correctly,
+    # but warps the global space. We want to see if the color field is
+    # captured by the neighbor clusters, so let's use TSNE
+    tsne = TSNE(n_components=2, random_state=42)
+    embed_2d = tsne.fit_transform(embeddings)
+
+    # Get the colors from the metadata
+    colors = [json.load(mp.open("r"))[colorfield] for mp in metapaths]
+
+    pyplot.figure(figsize=(10, 8))
+    scatter = pyplot.scatter(embed_2d[:, 0], embed_2d[:, 1], c=colors, cmap="RdYlGn")
+    pyplot.colorbar(scatter, label=colorfield)
+    pyplot.xlabel("TSNE projection 1")
+    pyplot.ylabel("TSNE projection 2")
+    pyplot.title(f"Project embeddings from {embeddings.shape[1]}-d to 2-d, see clusters")
+    pyplot.tight_layout()
+    pyplot.savefig(savedir.joinpath(f"embeddings_in_2d.jpg"))
+    pyplot.close()
+
+    print(f"Saved embeddings in 2d image to {savedir}")
 
 
 if __name__ == "__main__":
@@ -99,7 +124,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i",
         "--image-directory",
-        help="Directory with all images we want to examine",
+        help="Directory with all images we want to examine and corresponding"
+        " json metadata",
         required=True,
         type=Path,
     )
@@ -118,21 +144,29 @@ if __name__ == "__main__":
     data = json.load(args.embedding_file.open("r"))["data"]
     imnames = sorted(data.keys())
     embeddings = numpy.array([data[key] for key in imnames])
+    impaths = [args.image_directory.joinpath(im) for im in imnames]
+    metapaths = [p.with_suffix(".json") for p in impaths]
 
-    # inspect_knn(
-    #     embeddings,
-    #     imnames,
-    #     sample=10,
-    #     k=4,
-    #     imdir=args.image_directory,
-    #     savedir=args.save_directory,
-    # )
+    inspect_knn(
+        embeddings,
+        impaths,
+        sample=10,
+        k=4,
+        imdir=args.image_directory,
+        savedir=args.save_directory,
+    )
 
     inspect_differentials(
         embeddings,
-        imnames,
+        impaths,
         sample=10,
         k=2000,
-        imdir=args.image_directory,
+        savedir=args.save_directory,
+    )
+
+    visualize_2d(
+        embeddings,
+        metapaths,
+        colorfield="harvestability_label",
         savedir=args.save_directory,
     )
