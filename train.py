@@ -142,7 +142,9 @@ def train_step(
         with torch.cuda.amp.autocast():
             # Sample the embeddings the first batch
             if i == 0:
-                out, embeddings = model(x, return_embedding=True)
+                modeldict = model(x, w_im_embedding=True)
+                out = modeldict["outputs"]
+                embeddings = modeldict["embeddings"]
             else:
                 out = model(x)
             loss = criterion(out, y)
@@ -206,22 +208,23 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
         with torch.inference_mode():
             # Sample the embeddings the first batch
             if i == 0:
-                out, vectors, embeddings = model(x, return_embedding=True)
+                modeldict = model(x, w_vec_embedding=True, w_im_embedding=True)
+                embeddings = modeldict["embeddings"]
             else:
-                out, vectors = model(x)
-            loss = criterion(out, y)
-            per_input_loss = per_input_criterion(out, y)
+                modeldict = model(x, w_vec_embedding=True)
+            loss = criterion(modeldict["outputs"], y)
+            per_input_loss = per_input_criterion(modeldict["outputs"], y)
         val_loss += float(loss.detach().cpu())
         batch_bar.set_postfix(avg_loss=f"{val_loss/(i+1):.4f}")
         batch_bar.update()
 
         # Do some bookkeeping, save these for later use
         result["impaths"].extend(paths)
-        result["outputs"].extend([float(o) for o in out.detach().cpu()])
+        result["outputs"].extend([float(o) for o in modeldict["outputs"].detach().cpu()])
         result["losses"].extend([float(pil) for pil in per_input_loss.detach().cpu()])
-        result["vectors"].extend([v.tolist() for v in vectors.detach().cpu()])
+        result["vectors"].extend([v.tolist() for v in modeldict["vectors"].detach().cpu()])
 
-        del x, y, out, loss, per_input_loss, vectors
+        del x, y, modeldict, loss, per_input_loss
         torch.cuda.empty_cache()
 
     batch_bar.close()

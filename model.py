@@ -306,7 +306,7 @@ class Network(nn.Module):
                         layers.append(nn.Dropout(p=lin_dropout))
             self.classifier = nn.Sequential(*layers)
 
-    def forward(self, x, return_embedding=False):
+    def forward(self, x, w_vec_embedding=False, w_im_embedding=False):
         original_shape = x.shape
         embedding = self.embedding(x)
         x = self.pool(embedding)
@@ -322,16 +322,17 @@ class Network(nn.Module):
         else:
             x = self.classifier(vector)
 
-        if return_embedding:
-            # Return the image embedding in the form (B, H, W, C)
-            return (
-                x,
-                vector,
-                numpy.array(embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float),
-            )
+        if w_vec_embedding or w_im_embedding:
+            data = {"outputs": x}
+            if w_vec_embedding:
+                data["vectors"] = vector
+            if w_im_embedding:
+                # Return the image embedding in the form (B, H, W, C)
+                data["embeddings"] = numpy.array(embedding.permute(0, 2, 3, 1).detach().cpu(), dtype=float)
+            return data
         else:
-            # Return the output per image and the vector embedding per image
-            return (x, vector)
+            # Return the output per image
+            return x
 
 
 def network_kwargs(config):
