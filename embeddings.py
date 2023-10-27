@@ -109,6 +109,25 @@ def visualize_2d(embeddings, metapaths, colorfield, savedir):
     print(f"Saved embeddings in 2d image to {savedir}")
 
 
+def visualize_other(embed_dict_0, embed_dict_1, savedir):
+    deltas = numpy.array([
+        (numpy.array(embed_dict_0[key]) - numpy.array(embed_dict_1[key]))
+        for key in embed_dict_0
+        if key in embed_dict_1
+    ])
+    distances = numpy.linalg.norm(deltas, axis=1)
+
+    pyplot.hist(x=distances)
+    pyplot.xlabel("Distance between paired images")
+    pyplot.ylabel("Count")
+    pyplot.title(f"Histogram of pair distances, mean {distances.mean():.4}")
+    pyplot.tight_layout()
+    pyplot.savefig(savedir.joinpath(f"other_embeddings_hist.jpg"))
+    pyplot.close()
+
+    print(f"Saved pairwise comparisn to other embeddings {savedir}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Create report visualizations for embedding quality.",
@@ -134,6 +153,13 @@ if __name__ == "__main__":
         "--save-directory",
         help="Directory to store output files in",
         required=True,
+        type=Path,
+    )
+    parser.add_argument(
+        "-o",
+        "--other-embeddings",
+        help="Compare against other embeddings (only useful if from the same"
+        " model, and of the same images)",
         type=Path,
     )
     args = parser.parse_args()
@@ -170,3 +196,12 @@ if __name__ == "__main__":
         colorfield="harvestability_label",
         savedir=args.save_directory,
     )
+
+    if args.other_embeddings is not None:
+        other_data = json.load(args.other_embeddings.open("r"))["data"]
+
+        visualize_other(
+            data,
+            other_data,
+            savedir=args.save_directory,
+        )

@@ -8,9 +8,11 @@ import numpy
 from pathlib import Path
 from PIL import Image
 from scipy import signal
+from shutil import copy
 import torch
 import torchvision.transforms as transforms
 from torchvision.datasets import DatasetFolder, folder
+from tqdm import tqdm
 
 
 # Inspired by
@@ -162,6 +164,21 @@ def get_loaders(config, debug=False):
         print("=" * 80)
 
     return train_loader, test_loader
+
+
+def torch_img_to_array(torch_img, sigma=3):
+    # Convert torch to numpy
+    float_image = torch_img.movedim(0, -1).detach().cpu().numpy()
+    # If torch images are normalized, then we can
+    # 1) scale that down to get a certain number of sigmas into -0.5 - 0.5
+    # 2) add 0.5 so we're from 0 - 1
+    # 3) clip so the high-sigma values are maxed at 0 and 1 instead of clipping
+    if float_image.min() < 0:
+        float_image = numpy.clip((float_image / (2 * sigma)) + 0.5, 0, 1)
+    uint8_image = (float_image * 255).astype(numpy.uint8)
+    if uint8_image.shape[2] == 3:
+        uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+    return uint8_image
 
 
 class CutoutBoxes(object):
@@ -381,6 +398,37 @@ class ShadowBar(object):
         return torch.clamp(image, 0, 1)
 
 
+def get_normalization_stats(files, number):
+    imgs = [imageio.imread(x) for x, _ in zip(files, range(number))]
+    # Tile and scale to 0-1
+    imgs = numpy.concatenate(imgs, axis=0) / 255
+    mean = numpy.mean(imgs, axis=(0, 1))
+    std = numpy.std(imgs, axis=(0, 1))
+    print(f"mean: {mean}, stdev: {std}")
+
+
+def augment_images(data_path, extension, savedir, augpath, key):
+
+    loader = build_loader(
+        data_path=data_path,
+        batch_size=3,
+        augpath=augpath,
+        shuffle=False,
+        key=key,
+        extension=extension,
+        channels=3,
+        include_path=True,
+    )
+    for x, _, paths in tqdm(loader):
+        for torch_img, path in zip(x, map(Path, paths)):
+            # Save the augmented image
+            bgr = torch_img_to_array(torch_img)
+            new_path = savedir.joinpath(path.name)
+            cv2.imwrite(str(new_path), bgr)
+            # Get the metadata too
+            copy(path.with_suffix(".json"), new_path.with_suffix(".json"))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Calculate image stats useful for loading",
@@ -400,19 +448,57 @@ if __name__ == "__main__":
         default=".jpg",
     )
     parser.add_argument(
+        "-a",
+        "--augment-images",
+        help="Runs augmentation on image directory and saves to the augment"
+        " directory",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-A",
+        "--augment-directory",
+        help="Directory to save augmented images, if that flag is given",
+        type=Path,
+    )
+    parser.add_argument(
+        "-j",
+        "--augment-json",
+        help="json of augmentation steps, if that flag is given",
+        type=Path,
+    )
+    parser.add_argument(
+        "-m",
+        "--metadata-key",
+        help="Regression key in the metadata json files, only used with augmentation",
+    )
+    parser.add_argument(
         "-n",
+        "--normalize-stats",
+        help="Calculate the image stats for normalization in the image"
+        " directory, using the number of sampled images",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-N",
         "--number",
-        help="Number of images to sample (limited by memory constraints)",
+        help="Number of images to sample for normalization (limited by memory)",
         type=int,
         default=200,
     )
     args = parser.parse_args()
     assert args.image_directory.is_dir()
-
     files = args.image_directory.glob(f"*{args.extension}")
-    imgs = [imageio.imread(x) for x, _ in zip(files, range(args.number))]
-    # Tile and scale to 0-1
-    imgs = numpy.concatenate(imgs, axis=0) / 255
-    mean = numpy.mean(imgs, axis=(0, 1))
-    std = numpy.std(imgs, axis=(0, 1))
-    print(f"mean: {mean}, stdev: {std}")
+
+    if args.normalize_stats:
+        get_normalization_stats(files, args.number)
+
+    if args.augment_images:
+        assert args.augment_directory.is_dir()
+        assert args.augment_json.is_file()
+        augment_images(
+            data_path=args.image_directory,
+            extension=args.extension,
+            savedir=args.augment_directory,
+            augpath=args.augment_json,
+            key=args.metadata_key
+        )
