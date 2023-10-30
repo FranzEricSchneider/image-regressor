@@ -220,9 +220,13 @@ def evaluate(criterion, per_input_criterion, loader, models, device):
 
         # Do some bookkeeping, save these for later use
         result["impaths"].extend(paths)
-        result["outputs"].extend([float(o) for o in modeldict["outputs"].detach().cpu()])
+        result["outputs"].extend(
+            [float(o) for o in modeldict["outputs"].detach().cpu()]
+        )
         result["losses"].extend([float(pil) for pil in per_input_loss.detach().cpu()])
-        result["vectors"].extend([v.tolist() for v in modeldict["vectors"].detach().cpu()])
+        result["vectors"].extend(
+            [v.tolist() for v in modeldict["vectors"].detach().cpu()]
+        )
 
         del x, y, modeldict, loss, per_input_loss
         torch.cuda.empty_cache()
@@ -243,8 +247,9 @@ def save_inference(models, loaders, keys, config, device):
         else:
             model_name = f"{config['use_existing']}_pre-{config['pretrained']}"
     else:
-        model_name = "_".join([model["run_path"].replace("/", "_")
-                               for model in config["models"]])
+        model_name = "_".join(
+            [model["run_path"].replace("/", "_") for model in config["models"]]
+        )
 
     vectors = {"impaths": [], "vectors": []}
     for loader, key in zip(loaders, keys):
@@ -269,7 +274,7 @@ def save_inference(models, loaders, keys, config, device):
     # TODO: Should we include any other notes in the metadata like how much
     # the model was trained?
     # TODO: Make the config stuff more sensical and streamlined
-    file = Path(f"model_{model_name}_embeddings.json")
+    file = Path(f"model_{model_name}_embeddings_{len(vectors['impaths'])}.json")
     json.dump(
         {
             "data": {

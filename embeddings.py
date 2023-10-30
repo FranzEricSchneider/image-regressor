@@ -1,10 +1,13 @@
 import argparse
+from collections import defaultdict
 import cv2
 import json
 from matplotlib import pyplot
 import numpy
 from pathlib import Path
+from shutil import copy
 
+from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
 
@@ -14,6 +17,187 @@ from image_regressor.vis import highlight_images
 # Size that is good for downsampled viewing of many images, on the order of
 # 3x5 stacked images or so
 DOWNSIZE = numpy.array([335, 253])
+
+
+# TODO: Rework this to handle existing assignments
+def assign(embed_file, chart, imdir, savedir, subfolders):
+    """
+    Use embeddings to assign different reviewers to as diverse a set of samples
+    as possible.
+
+    Arguments:
+        embed_file: pathlib.Path object that contains embeddings in a json dict
+            as seen elsewhere in this file
+        chart: List of dictionaries containing
+            {
+                "id": <user id/name>,
+                "number": <number of images to assign>,
+                "crossover": <OPTIONAL dictionary of {"id": fraction} where we
+                    can have X% of user B cross over with user A>
+            }
+        imdir: pathlib.Path object to a directory with all the images in the
+            embedding data
+        savedir: pathlib.Path object to the directory we want to save the
+            assignment folders in
+        subfolders: Iterable of directory names that we want to make inside of
+            the assignment folder
+    """
+
+    # Load embeddings
+    data = json.load(embed_file.open("r"))["data"]
+    imnames = sorted(data.keys())
+    embeddings = numpy.array([data[key] for key in imnames])
+
+    assignments = defaultdict(list)
+
+    def unassigned(uid=None):
+        """
+        Helper function to get all currently unassigned image indices OR just
+        the indices not assigned to the given ID
+        """
+        total = set(range(len(imnames)))
+        if uid is None:
+            for assigned in assignments.values():
+                total -= set(assigned)
+        else:
+            total -= set(assignments[uid])
+        return sorted(total)
+
+    # Assign images to users in the order that that are given in the chart
+    for user in chart:
+        uid, N = user["id"], user["number"]
+
+        # If they have crossover images, sample a crossover amount from images
+        # already assigned to other users
+        if "crossover" in user:
+            for cross_id, f_N in user["crossover"].items():
+                cross_N = int(N * f_N)
+                assignments[uid].extend(
+                    sample(
+                        embeddings,
+                        pool=assignments[cross_id],
+                        n_required=cross_N,
+                    )
+                )
+
+        # Then fill in the remaining images
+        remaining = N - len(assignments[uid])
+        if remaining > 0:
+            # If the UNASSIGNED IMAGES do not have enough images left to fill
+            # the user's quota, start drawing from the backup pool which is any
+            # image not already assigned to this user (will result in more
+            # overlap)
+            assignments[uid].extend(
+                sample(
+                    embeddings,
+                    pool=unassigned(),
+                    backup_pool=unassigned(uid),
+                    n_required=remaining,
+                )
+            )
+
+        # Save the images and desired subfolders to a user folder
+        userdir = savedir.joinpath(uid)
+        userdir.mkdir(parents=True, exist_ok=False)
+        for subfolder in subfolders:
+            userdir.joinpath(subfolder).mkdir()
+        if len(assignments[uid]) != N:
+            import ipdb
+
+            ipdb.set_trace()
+        for imname in map(lambda x: imnames[x], assignments[uid]):
+            copy(imdir.joinpath(imname), userdir.joinpath(imname))
+
+
+def sample(embeddings, pool, n_required, backup_pool=None, f_kmeans=0.7):
+    """
+    Sample a set of embedding indices from the pool (and if necessary, the)
+    backup pool.
+
+    Right now we do this in two stages:
+        A kmeans stage, where we find k clusters in the data and take an image
+            index from each cluster. The point is to spread the samples out in
+            the embedding space
+        A knn stage, where we sample indices whose nearest neighbor in the
+            current sample set is the furthest away. The point is to get
+            outliers that may not form nice clusters.
+    The fraction of how many should be taken via kmeans vs knn is tunable, but
+    I'm not sure it matters much.
+
+    If the number required is greater than the current pool size, AND a backup
+    pool has been provided, then first take all of the pool candidates and then
+    sample from the backup pool.
+
+    Arguments:
+        embeddings: MxN array of image embeddings, for M images with a feature
+            length of N
+        pool: list of indices into embeddings that are available for sampling
+        n_required: number of indices to sample
+        backup_pool: (optional) more expansive set of indices in case
+            n_required is larger than the pool. If it is None we simply return
+            everything in pool. If not None and we overflow then sample from
+            the backup pool
+        f_kmeans: the fraction of samples to take using kmeans rather than
+            furthest neighbor sampling
+    """
+
+    indices = []
+    if n_required > len(pool):
+        indices.extend(pool)
+        pool = sorted(set(backup_pool) - set(indices))
+        n_required -= len(indices)
+
+    n_kmeans = int(n_required * f_kmeans)
+    n_knn = n_required - n_kmeans
+
+    # Step 1: KMeans clustering
+    indices.extend(kmeans_sample(pool, embeddings[pool], n_kmeans))
+
+    # Take the initial selection out of the pool
+    pool = sorted(set(pool) - set(indices))
+
+    # Step 2: Use knn to get the outliers
+    indices.extend(
+        knn_sample(
+            in_indices=indices,
+            in_embed=embeddings[indices],
+            out_indices=pool,
+            out_embed=embeddings[pool],
+            k=n_knn,
+        )
+    )
+
+    return indices
+
+
+def kmeans_sample(indices, embeddings, k):
+    """Take a random sample index from each of the k clusters."""
+
+    kmeans = KMeans(n_clusters=k, n_init="auto")
+    clusters = kmeans.fit_predict(embeddings)
+
+    # Iterate through clusters and sample one index from each cluster
+    indices = numpy.array(indices)
+    sampled_indices = []
+    for cluster_idx in range(k):
+        sampled_indices.append(numpy.random.choice(indices[clusters == cluster_idx]))
+
+    return sampled_indices
+
+
+def knn_sample(in_indices, in_embed, out_indices, out_embed, k):
+    """
+    Find the k indices that are furthest from the existing assignments (in) in
+    the available embeddings (out)
+    """
+
+    knn = NearestNeighbors(n_neighbors=1, algorithm="auto")
+    knn.fit(in_embed)
+
+    dists, _ = knn.kneighbors(out_embed)
+    furthest = numpy.argsort(dists.squeeze())[::-1]
+
+    return numpy.array(out_indices)[furthest[:k]].tolist()
 
 
 # TODO: Try different distances: two best candidates are euclidean and
@@ -54,7 +238,9 @@ def inspect_differentials(embeddings, impaths, sample, k, savedir):
         # Check a feasibly large number of vectors, select the largest distance
         # and also the closest to 0.5
         subsamples = numpy.random.choice(range(len(impaths)), size=k, replace=False)
-        distances = numpy.linalg.norm(embeddings[subsamples] - embeddings[index], axis=1)
+        distances = numpy.linalg.norm(
+            embeddings[subsamples] - embeddings[index], axis=1
+        )
 
         # Get the max and the closest to 50%
         maxind = distances.argmax()
@@ -101,7 +287,9 @@ def visualize_2d(embeddings, metapaths, colorfield, savedir):
     pyplot.colorbar(scatter, label=colorfield)
     pyplot.xlabel("TSNE projection 1")
     pyplot.ylabel("TSNE projection 2")
-    pyplot.title(f"Project embeddings from {embeddings.shape[1]}-d to 2-d, see clusters")
+    pyplot.title(
+        f"Project embeddings from {embeddings.shape[1]}-d to 2-d, see clusters"
+    )
     pyplot.tight_layout()
     pyplot.savefig(savedir.joinpath(f"embeddings_in_2d.jpg"))
     pyplot.close()
@@ -110,11 +298,13 @@ def visualize_2d(embeddings, metapaths, colorfield, savedir):
 
 
 def visualize_other(embed_dict_0, embed_dict_1, savedir):
-    deltas = numpy.array([
-        (numpy.array(embed_dict_0[key]) - numpy.array(embed_dict_1[key]))
-        for key in embed_dict_0
-        if key in embed_dict_1
-    ])
+    deltas = numpy.array(
+        [
+            (numpy.array(embed_dict_0[key]) - numpy.array(embed_dict_1[key]))
+            for key in embed_dict_0
+            if key in embed_dict_1
+        ]
+    )
     distances = numpy.linalg.norm(deltas, axis=1)
 
     pyplot.hist(x=distances)
