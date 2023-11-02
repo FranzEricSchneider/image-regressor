@@ -30,7 +30,14 @@ def main():
     if config["train"]:
         assert len(models) == 1
         model = models[0]
-        run_train(train_loader, test_loader, model, config, num_cpus, device, run)
+        run_train(
+            train_loader=train_loader,
+            val_loader=test_loader,
+            model=model,
+            config=config,
+            device=device,
+            run=run,
+        )
     else:
         save_inference(
             models, (train_loader, test_loader), ("train", "test"), config, device
