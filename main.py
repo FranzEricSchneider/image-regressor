@@ -26,6 +26,8 @@ def main():
     run = None
     if config["wandb"]:
         run = wandb_run(config)
+        wandb.save(config["train_augmentation_path"])
+        wandb.save(config["test_augmentation_path"])
 
     if config["train"]:
         assert len(models) == 1
