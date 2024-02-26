@@ -7,6 +7,7 @@ from pathlib import Path
 
 import torch
 from torch.nn import MSELoss
+import wandb
 
 from image_regressor.loader import get_loaders
 from image_regressor.model import get_models
