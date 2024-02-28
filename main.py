@@ -18,14 +18,12 @@ from image_regressor.vis import vis_model
 def main():
     num_cpus, device = system_check()
     config = load_config()
-    # Login right off the bat so various loaders can save information
-    if config["wandb"]:
-        login_wandb(config)
-    train_loader, test_loader = get_loaders(config, debug=True)
-    models = get_models(config, test_loader, device, debug=False)
+    models = get_models(config, None, device)
     run = None
     if config["wandb"]:
+        login_wandb(config)
         run = wandb_run(config)
+    train_loader, test_loader = get_loaders(config, debug=True)
 
     if config["train"]:
         assert len(models) == 1

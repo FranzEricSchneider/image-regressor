@@ -156,15 +156,18 @@ def get_loaders(config, debug=False):
         wandb.save(config["train_augmentation_path"])
         wandb.save(config["test_augmentation_path"])
 
-        with tempfile.TemporaryDirectory() as tdir:
-            for key in ("train", "test"):
-                path = Path(tdir).joinpath(f"{key}_files.json")
-                json.dump(
-                    sorted(config["data_dir"].joinpath(key).glob("*.jpg")),
-                    path.open("w"),
-                    indent=4,
-                )
-                wandb.save(path)
+        tdir = Path("/tmp/")
+        for key in ("train", "test"):
+            path = Path(tdir).joinpath(f"{key}_files.json")
+            json.dump(
+                sorted([
+                    impath.name
+                    for impath in config["data_dir"].joinpath(key).glob("*.jpg")
+                ]),
+                path.open("w"),
+                indent=4,
+            )
+            wandb.save(str(path))
 
     if debug:
         print()
