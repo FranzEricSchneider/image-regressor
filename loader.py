@@ -9,10 +9,12 @@ from pathlib import Path
 from PIL import Image
 from scipy import signal
 from shutil import copy
+import tempfile
 import torch
 import torchvision.transforms as transforms
 from torchvision.datasets import DatasetFolder, folder
 from tqdm import tqdm
+import wandb
 
 
 # Inspired by
@@ -75,7 +77,7 @@ class ImageDataset(torch.utils.data.Dataset):
 
 
 def build_transform(augpath):
-    assert augpath.is_file()
+    assert augpath.is_file(), f"Couldn't find {augpath.absolute()}"
     return transforms.Compose(
         [
             (
@@ -148,6 +150,21 @@ def get_loaders(config, debug=False):
         is_autoencoder=config["is_autoencoder"],
         include_path=True,
     )
+
+    # Save the augmentation files and the train/test set breakdown
+    if config["wandb"]:
+        wandb.save(config["train_augmentation_path"])
+        wandb.save(config["test_augmentation_path"])
+
+        with tempfile.TemporaryDirectory() as tdir:
+            for key in ("train", "test"):
+                path = Path(tdir).joinpath(f"{key}_files.json")
+                json.dump(
+                    sorted(config["data_dir"].joinpath(key).glob("*.jpg")),
+                    path.open("w"),
+                    indent=4,
+                )
+                wandb.save(path)
 
     if debug:
         print()

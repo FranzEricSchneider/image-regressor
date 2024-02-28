@@ -7,7 +7,6 @@ from pathlib import Path
 
 import torch
 from torch.nn import MSELoss
-import wandb
 
 from image_regressor.loader import get_loaders
 from image_regressor.model import get_models
@@ -19,16 +18,14 @@ from image_regressor.vis import vis_model
 def main():
     num_cpus, device = system_check()
     config = load_config()
-    train_loader, test_loader = get_loaders(config, debug=True)
-    # Login before getting models so we can modify the config
+    # Login right off the bat so various loaders can save information
     if config["wandb"]:
         login_wandb(config)
+    train_loader, test_loader = get_loaders(config, debug=True)
     models = get_models(config, test_loader, device, debug=False)
     run = None
     if config["wandb"]:
         run = wandb_run(config)
-        wandb.save(config["train_augmentation_path"])
-        wandb.save(config["test_augmentation_path"])
 
     if config["train"]:
         assert len(models) == 1
