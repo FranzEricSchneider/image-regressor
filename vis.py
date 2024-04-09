@@ -448,7 +448,13 @@ def save_debug_images(
 
         uint8_image = cv2.imread(str(impath))
         if from_torch is not None:
-            uint8_image = numpy.hstack((uint8_image, torch_img_to_array(from_torch[i])))
+            torch_img = torch_img_to_array(from_torch[i])
+            # Fix the shape if necessary
+            if torch_img.shape != uint8_image.shape:
+                uint8_image = Image.fromarray(uint8_image)
+                uint8_image = uint8_image.resize(torch_img.shape[::-1][1:], resample=LANCZOS)
+                uint8_image = numpy.uint8(uint8_image)
+            uint8_image = numpy.hstack((uint8_image, torch_img))
 
         if label is not None:
             uint8_image = highlight_text(uint8_image, f"{label:.2f}")
@@ -481,7 +487,8 @@ def highlight_text(image, text, level=0):
         black = (0, 0, 0)
 
     # Reset to a standard size (//4 shape, b/c that's how the text was tuned)
-    image = cv2.resize(image, (1006, 759))
+    width = 1006
+    image = cv2.resize(image, (width, int(image.shape[0] * width / image.shape[1])))
     vstep = 50
 
     image[vstep * level : vstep * (level + 1), : 18 * len(text) + 18] = white
@@ -505,10 +512,11 @@ def visually_label_images(
     augmentation,
     extension,
     number,
+    downsampled_size,
     key,
-    shuffle,
     keyfile,
     metakeys,
+    forgive_key=None,
 ):
     """
     1) Load model according to arguments
@@ -524,11 +532,15 @@ def visually_label_images(
         augmentation: pathlib.Path for augmentation file for the loader
         extension: suffix like ".png" or ".jpg" for the loader
         number: how many images to process (for speed reasons)
+        downsampled_size: (W, H) that the images should be
         key: (string) the key in the json files for the GT value
-        shuffle: (bool) whether to shuffle the loader
         keyfile: pathlib.Path for our wandb login file
         metakeys: other values in the json file we want to include in the
             visualization (e.g. writing on the image)
+        forgive_key: If False, then the loader will require that the json files
+            contain the regression key. If True, then the loader will forgive
+            missing regression key (useful for running inference on unlabeled
+            images)
     """
 
     # Needed before we can restore the models
@@ -565,21 +577,24 @@ def visually_label_images(
         data_path=imdir,
         batch_size=1,
         augpath=augmentation,
-        shuffle=shuffle,
+        shuffle=False,
         key=key,
         extension=extension,
         # TODO: Expand in the future as necessary
         channels=3,
         include_path=True,
+        downsampled_size=downsampled_size,
+        forgive_key=forgive_key,
     )
+    print(imdir)
 
     print(f"Started visualizing at {datetime.now()}")
     count = 0
-    for x, value, paths in loader:
-        # Enforce a rule of thumb size limit (expand if we want later)
-        assert all(
-            numpy.array(x.shape[2:]) < 1500
-        ), f"Images too large ({x.shape[2:]}), were they downsampled?"
+    for x, value, paths in tqdm(loader):
+        # Enforce size (CBHW)
+        assert (
+            tuple(downsampled_size) == (x.shape[3], x.shape[2])
+        ), f"Images too large {(x.shape[3], x.shape[2])}, were they downsampled?"
 
         paths = [Path(p) for p in paths]
         x = x.to(device)
@@ -868,9 +883,18 @@ if __name__ == "__main__":
         default=10,
     )
     parser.add_argument(
-        "-S",
-        "--shuffle",
-        help="[Only used w/ from_model] Shuffle images before selecting <number>",
+        "-D",
+        "--downsampled-size",
+        help="[Only used w/ from_model] TODO. Should be in the (Width, Height) format",
+        type=int,
+        nargs="+",
+        default=[167, 129],
+    )
+    parser.add_argument(
+        "-K",
+        "--forgive-key",
+        help="[Only used w/ from_model] If True, allows the loader to not find"
+        " the regression key in the metadata without error",
         action="store_true",
     )
 
@@ -916,6 +940,7 @@ if __name__ == "__main__":
         assert bool(args.wandb_run_path is not None) ^ bool(
             args.config_paths is not None
         )
+        assert len(args.downsampled_size) == 2
         visually_label_images(
             imdir=args.image_directory,
             savedir=args.output_directory,
@@ -925,9 +950,10 @@ if __name__ == "__main__":
             extension=args.extension,
             number=args.number,
             key=args.regression_key,
-            shuffle=args.shuffle,
             keyfile=args.wandb_keyfile,
             metakeys=args.extra_labels,
+            forgive_key=args.forgive_key,
+            downsampled_size=args.downsampled_size,
         )
     else:
         raise NotImplementedError(f"Source {args.source} not handled")

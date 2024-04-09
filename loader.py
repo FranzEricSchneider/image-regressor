@@ -16,12 +16,19 @@ from torchvision.datasets import DatasetFolder, folder
 from tqdm import tqdm
 import wandb
 
+# Handle library differences
+try:
+    LANCZOS = Image.LANCZOS
+except AttributeError:
+    LANCZOS = Image.Resampling.LANCZOS
+
 
 # Inspired by
 # https://towardsdatascience.com/using-shap-to-debug-a-pytorch-image-regression-model-4b562ddef30d
 class ImageDataset(torch.utils.data.Dataset):
     def __init__(
-        self, paths, transform, key, channels, is_autoencoder=False, include_path=False
+        self, paths, transform, key, channels, is_autoencoder=False,
+        include_path=False, forgive_key=False, downsampled_size=None
     ):
 
         self.transform = transform
@@ -30,6 +37,8 @@ class ImageDataset(torch.utils.data.Dataset):
         self.channels = channels
         self.is_autoencoder = is_autoencoder
         self.include_path = include_path
+        self.forgive_key = forgive_key
+        self.size = downsampled_size
 
     def __getitem__(self, idx):
         """Get image and target value"""
@@ -53,6 +62,9 @@ class ImageDataset(torch.utils.data.Dataset):
             image = numpy.load(path)
 
         image = Image.fromarray(image)
+        if self.size is not None and (image.width, image.height) != self.size:
+            image = image.resize(self.size, resample=LANCZOS)
+
         # Transform image
         image = self.transform(image)
 
@@ -70,7 +82,10 @@ class ImageDataset(torch.utils.data.Dataset):
     def get_target(self, path):
         name = path.with_suffix(".json").name
         metadata = json.load(path.parent.joinpath(name).open("r"))
-        return [metadata[self.key]]
+        if self.forgive_key:
+            return [metadata.get(self.key, -1)]
+        else:
+            return [metadata[self.key]]
 
     def __len__(self):
         return len(self.paths)
@@ -103,6 +118,8 @@ def build_loader(
     channels,
     is_autoencoder=False,
     include_path=False,
+    forgive_key=False,
+    downsampled_size=None,
 ):
 
     transform = build_transform(Path(augpath))
@@ -114,6 +131,8 @@ def build_loader(
         channels=channels,
         is_autoencoder=is_autoencoder,
         include_path=include_path,
+        forgive_key=forgive_key,
+        downsampled_size=downsampled_size,
     )
     dataloader = torch.utils.data.DataLoader(
         dataset, num_workers=0, pin_memory=True, batch_size=batch_size, shuffle=shuffle
