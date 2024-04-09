@@ -157,6 +157,8 @@ def get_loaders(config, debug=False):
         channels=config["starting_channels"],
         is_autoencoder=config["is_autoencoder"],
         include_path=True,
+        forgive_key=config["forgive_key"],
+        downsampled_size=config["downsampled_size"],
     )
     test_loader = build_loader(
         data_path=config["data_dir"].joinpath("test"),
@@ -168,6 +170,8 @@ def get_loaders(config, debug=False):
         channels=config["starting_channels"],
         is_autoencoder=config["is_autoencoder"],
         include_path=True,
+        forgive_key=config["forgive_key"],
+        downsampled_size=config["downsampled_size"],
     )
 
     # Save the augmentation files and the train/test set breakdown

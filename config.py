@@ -16,6 +16,11 @@ CONFIG = {
     "keyfile": getenv("HOME") + "/wandb.json",
     "train": True,
 
+    # During inference-only set this to True to run on unlabeled images
+    "forgive_key": False,
+    # During inference-only set this value to run on non-downsampled images
+    "downsampled_size": None,
+
     # Option to log images during training to the /tmp/ dir for visualization.
     # This is likely a slowdown so should be used for debugging.
     "log_training_images": False,

@@ -10,6 +10,7 @@ from matplotlib import pyplot
 import numpy
 from pathlib import Path
 from PIL import Image
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 import time
 import torch
@@ -803,6 +804,33 @@ def compilation_video(impaths):
         out.write(cv2.imread(str(impath)))
     out.release()
     return vid_path
+
+
+def embedding_knn(gt_embed, test_embed, gt_imdir, test_imdir, savedir, k=4, height=480):
+    gt_data = json.load(gt_embed.open("r"))["data"]
+    gt_images = sorted([imname for imname in gt_data.keys()])
+    gt_vectors = numpy.array([gt_data[imname] for imname in gt_images])
+
+    # Initialize kNN
+    nbrs = NearestNeighbors(n_neighbors=k, algorithm="auto").fit(gt_vectors)
+
+    # Infer on each test vector
+    test_data = json.load(test_embed.open("r"))["data"]
+    for imname, vector in test_data.items():
+        _, indices = nbrs.kneighbors([vector])
+        image = numpy.hstack(
+            [read_rgb(test_imdir / imname)] + [
+                read_rgb(gt_imdir / gt_images[idx])
+                for idx in indices[0]
+            ]
+        )
+        # Resize to be smaller
+        width = int((height / image.shape[0]) * image.shape[1])
+        image = cv2.resize(image, (width, height))
+        # Save
+        path = str(savedir / imname)
+        cv2.imwrite(path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        print(f"Saved embedding kNN vis to {path}")
 
 
 if __name__ == "__main__":

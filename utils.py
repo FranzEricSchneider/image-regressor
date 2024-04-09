@@ -100,6 +100,11 @@ def load_config():
             for run_path in args.run_paths
         ]
 
+    # Do some checks
+    if config["train"]:
+        assert not config["forgive_key"], "Can't train with forgive_key:True"
+        assert config["downsampled_size"] is None, "Can't train with downsampled_size != None"
+
     print("\n" + "=" * 36 + " CONFIG " + "=" * 36)
     for k, v in config.items():
         print(f"\t{k}: {v}")
