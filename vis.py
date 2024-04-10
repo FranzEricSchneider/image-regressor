@@ -806,7 +806,7 @@ def compilation_video(impaths):
     return vid_path
 
 
-def embedding_knn(gt_embed, test_embed, gt_imdir, test_imdir, savedir, k=4, height=480):
+def embedding_knn(gt_embed, test_embed, gt_imdir, test_imdir, savedir, k=3, height=480):
     gt_data = json.load(gt_embed.open("r"))["data"]
     gt_images = sorted([imname for imname in gt_data.keys()])
     gt_vectors = numpy.array([gt_data[imname] for imname in gt_images])

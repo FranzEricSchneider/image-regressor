@@ -253,7 +253,7 @@ def save_inference(models, loaders, keys, config, device):
 
     vectors = {"impaths": [], "vectors": []}
     for loader, key in zip(loaders, keys):
-        _, result, _ = evaluate(
+        avg_loss, result, _ = evaluate(
             nn.MSELoss(), nn.MSELoss(reduction="none"), loader, models, device
         )
         file = Path(f"model_{model_name}_{key}.json")
@@ -267,6 +267,7 @@ def save_inference(models, loaders, keys, config, device):
             sort_keys=True,
         )
         print(f"Saved to {file}")
+        print(f"Average loss for {key}: {avg_loss:.3f}")
         # Save the vector embedding results
         vectors["impaths"].extend(result["impaths"])
         vectors["vectors"].extend(result["vectors"])
